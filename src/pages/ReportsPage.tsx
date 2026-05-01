@@ -1,4 +1,5 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
+import { track } from '../analytics/analytics';
 import { PriorityBadge } from '../components/Badges';
 import { PRIORITIES, TEAMS } from '../domain/types';
 import { useTickets } from '../state/ticketStore';
@@ -8,6 +9,10 @@ export function ReportsPage() {
   const solvedThisWeek = tickets.filter((ticket) => ticket.status === 'Solved' || ticket.status === 'Closed').length;
   const openTickets = tickets.filter((ticket) => !['Solved', 'Closed'].includes(ticket.status)).length;
   const slaBreaches = tickets.filter((ticket) => ticket.sla.state === 'Breached').length;
+
+  useEffect(() => {
+    track('view_opened', { view: 'reports' });
+  }, []);
 
   const priorityRows = useMemo(
     () =>

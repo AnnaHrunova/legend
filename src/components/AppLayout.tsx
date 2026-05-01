@@ -54,10 +54,9 @@ export function AppLayout() {
 
         <div className="sidebar-section">
           <div className="sidebar-section-title">
-            <span>Views</span>
-            <button onClick={() => navigate('/views/my-tickets?createView=1')}>New</button>
+            <span>System views</span>
           </div>
-          <nav className="nav-list view-nav" aria-label="Ticket views">
+          <nav className="nav-list view-nav" aria-label="System ticket views">
             {systemViews.map((view) => (
               <NavLink key={view.id} to={`/views/${view.id}`} className="nav-link view-link">
                 <i style={{ background: view.color }} />
@@ -65,6 +64,15 @@ export function AppLayout() {
                 <em>{viewCount(view.id)}</em>
               </NavLink>
             ))}
+          </nav>
+        </div>
+
+        <div className="sidebar-section">
+          <div className="sidebar-section-title">
+            <span>My views</span>
+            <button onClick={() => navigate('/views/my-tickets?createView=1')}>New</button>
+          </div>
+          <nav className="nav-list view-nav" aria-label="My ticket views">
             {customViews.map((view) => (
               <NavLink key={view.id} to={`/views/${view.id}`} className="nav-link view-link">
                 <i style={{ background: view.color ?? '#64748b' }} />
@@ -72,6 +80,15 @@ export function AppLayout() {
                 <em>{viewCount(view.id)}</em>
               </NavLink>
             ))}
+            {customViews.length === 0 && (
+              <button
+                className="empty-view-link"
+                type="button"
+                onClick={() => navigate('/views/my-tickets?createView=1')}
+              >
+                Create your first view
+              </button>
+            )}
           </nav>
         </div>
       </aside>

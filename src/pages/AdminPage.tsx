@@ -1,3 +1,5 @@
+import { useEffect } from 'react';
+import { track } from '../analytics/analytics';
 import { macros } from '../data/mockMacros';
 import { agents } from '../data/mockUsers';
 import { PRIORITIES, STATUSES, TEAMS } from '../domain/types';
@@ -9,6 +11,10 @@ const slaPolicies = [
 ];
 
 export function AdminPage() {
+  useEffect(() => {
+    track('view_opened', { view: 'admin' });
+  }, []);
+
   return (
     <section className="page-stack">
       <div className="page-header">

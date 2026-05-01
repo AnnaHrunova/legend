@@ -119,6 +119,10 @@ a {
   min-height: 0;
 }
 
+.sidebar-section + .sidebar-section {
+  margin-top: 8px;
+}
+
 .sidebar-section-title {
   display: flex;
   align-items: center;
@@ -143,6 +147,23 @@ a {
 .view-nav {
   overflow-y: auto;
   padding-right: 2px;
+}
+
+.empty-view-link {
+  min-height: 38px;
+  border: 1px dashed rgba(255, 255, 255, 0.24);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  color: #cbd7e7;
+  padding: 0 10px;
+  text-align: left;
+  font-weight: 800;
+}
+
+.empty-view-link:hover {
+  border-color: rgba(215, 255, 248, 0.44);
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
 }
 
 .nav-link {
@@ -892,6 +913,57 @@ textarea:focus {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px 14px;
+}
+
+.color-picker-field {
+  display: grid;
+  gap: 8px;
+}
+
+.color-picker-field > span {
+  color: #59687d;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.color-swatch-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.color-swatch-grid button {
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #ffffff;
+  color: var(--ink);
+  font-weight: 800;
+}
+
+.color-swatch-grid button.selected {
+  border-color: #58a99f;
+  box-shadow: 0 0 0 3px rgba(20, 184, 166, 0.14);
+}
+
+.color-swatch-grid button span {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.45);
+}
+
+.color-swatch-grid button em {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-style: normal;
+  font-size: 12px;
 }
 
 .form-grid {

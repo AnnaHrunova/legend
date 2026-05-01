@@ -1,4 +1,6 @@
+import { useEffect } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
+import { track } from './analytics/analytics';
 import { AppLayout } from './components/AppLayout';
 import { AdminPage } from './pages/AdminPage';
 import { CreateTicketPage } from './pages/CreateTicketPage';
@@ -8,6 +10,10 @@ import { ReportsPage } from './pages/ReportsPage';
 import { TicketDetailPage } from './pages/TicketDetailPage';
 
 export default function App() {
+  useEffect(() => {
+    track('app_opened');
+  }, []);
+
   return (
     <Routes>
       <Route element={<AppLayout />}>

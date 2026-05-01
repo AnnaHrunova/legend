@@ -75,6 +75,8 @@ Use `.env.example` as the template for local setup. Do not commit `.env`, `.env.
 
 Important actions already call `track()`, including:
 
+- `app_opened`
+- `view_opened`
 - `ticket_opened`
 - `ticket_created`
 - `ticket_status_changed`
@@ -83,14 +85,6 @@ Important actions already call `track()`, including:
 - `ticket_reply_submitted`
 - `internal_note_submitted`
 - `macro_applied`
-- `view_opened`
-- `view_created`
-- `view_edited`
-- `view_duplicated`
-- `view_deleted`
-- `view_filter_changed`
-- `view_sort_changed`
-- `view_column_visibility_changed`
 - `filter_applied`
 - `search_used`
 - `bulk_action_completed`

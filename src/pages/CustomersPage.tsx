@@ -1,5 +1,6 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { track } from '../analytics/analytics';
 import { PriorityBadge, StatusBadge } from '../components/Badges';
 import { formatShortDate } from '../components/format';
 import { customers } from '../data/mockCustomers';
@@ -10,6 +11,10 @@ export function CustomersPage() {
   const [selectedId, setSelectedId] = useState(customers[0].id);
   const selectedCustomer = customers.find((customer) => customer.id === selectedId) ?? customers[0];
   const selectedTickets = tickets.filter((ticket) => ticket.customerId === selectedCustomer.id);
+
+  useEffect(() => {
+    track('view_opened', { view: 'customers' });
+  }, []);
 
   const rows = useMemo(
     () =>

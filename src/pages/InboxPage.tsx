@@ -40,7 +40,14 @@ const sortLabels: Record<TicketSortOption, string> = {
   'recently-updated': 'Recently updated',
 };
 
-const colors = ['#2563eb', '#0f766e', '#b42318', '#b45309', '#4f46e5', '#15803d'];
+const viewColors = [
+  { name: 'Blue', value: '#2563eb' },
+  { name: 'Teal', value: '#0f766e' },
+  { name: 'Red', value: '#b42318' },
+  { name: 'Amber', value: '#b45309' },
+  { name: 'Indigo', value: '#4f46e5' },
+  { name: 'Green', value: '#15803d' },
+];
 
 interface ViewFormState {
   name: string;
@@ -81,7 +88,7 @@ export function InboxPage() {
     const routeSearch = searchParams.get('search');
     if (routeSearch !== null) {
       setQuery(routeSearch);
-      track('search_used', { query: routeSearch, source: 'topbar' });
+      track('search_used', { queryLength: routeSearch.length });
     }
     if (searchParams.get('createView') === '1') {
       setEditorMode('create');
@@ -91,7 +98,7 @@ export function InboxPage() {
   useEffect(() => {
     if (view) {
       setSelected([]);
-      track('view_opened', { viewId: view.id, viewName: view.name, viewType: view.type });
+      track('view_opened', { view: 'inbox' });
     }
   }, [view]);
 
@@ -128,14 +135,12 @@ export function InboxPage() {
   function duplicateCurrentView() {
     const duplicated = duplicateView(activeView.id);
     if (!duplicated) return;
-    track('view_duplicated', { sourceViewId: activeView.id, viewId: duplicated.id });
     navigate(`/views/${duplicated.id}`);
   }
 
   function deleteCurrentView() {
     if (activeView.type !== 'custom') return;
     deleteView(activeView.id);
-    track('view_deleted', { viewId: activeView.id, viewName: activeView.name });
     navigate('/views/my-tickets');
   }
 
@@ -149,7 +154,13 @@ export function InboxPage() {
       sort,
       visibleColumns: activeView.visibleColumns,
     });
-    track('view_sort_changed', { viewId: activeView.id, sort });
+  }
+
+  function trackSearchUsed() {
+    const queryLength = query.trim().length;
+    if (queryLength > 0) {
+      track('search_used', { queryLength });
+    }
   }
 
   return (
@@ -199,7 +210,7 @@ export function InboxPage() {
           <span>Search within view</span>
           <input
             value={query}
-            onBlur={() => query.trim() && track('search_used', { query, viewId: view.id })}
+            onBlur={trackSearchUsed}
             onChange={(event) => {
               const nextQuery = event.target.value;
               setQuery(nextQuery);
@@ -224,7 +235,7 @@ export function InboxPage() {
           <button
             onClick={() => {
               assignToCurrentUser(selected);
-              track('bulk_action_completed', { action: 'assign to me', count: selected.length });
+              track('bulk_action_completed', { action: 'assign', count: selected.length });
             }}
           >
             Assign to me
@@ -234,7 +245,7 @@ export function InboxPage() {
             onChange={(event) => {
               if (!event.target.value) return;
               bulkUpdateStatus(selected, event.target.value as TicketStatus);
-              track('bulk_action_completed', { action: 'change status', value: event.target.value });
+              track('bulk_action_completed', { action: 'status_change', count: selected.length });
               event.currentTarget.value = '';
             }}
           >
@@ -248,7 +259,7 @@ export function InboxPage() {
             onChange={(event) => {
               if (!event.target.value) return;
               bulkUpdatePriority(selected, event.target.value as Priority);
-              track('bulk_action_completed', { action: 'change priority', value: event.target.value });
+              track('bulk_action_completed', { action: 'priority_change', count: selected.length });
               event.currentTarget.value = '';
             }}
           >
@@ -262,7 +273,7 @@ export function InboxPage() {
             onSubmit={(event) => {
               event.preventDefault();
               bulkAddTag(selected, bulkTag);
-              track('bulk_action_completed', { action: 'add tag', tag: bulkTag, count: selected.length });
+              track('bulk_action_completed', { action: 'tag_add', count: selected.length });
               setBulkTag('');
             }}
           >
@@ -328,18 +339,13 @@ export function InboxPage() {
           }}
           onCreate={(draft) => {
             const created = createView(draft);
-            track('view_created', { viewId: created.id, viewName: created.name });
             navigate(`/views/${created.id}`);
           }}
           onUpdate={(draft, changeFlags) => {
             updateView(view.id, draft);
-            track('view_edited', { viewId: view.id, viewName: draft.name });
             if (changeFlags.filters) {
-              track('view_filter_changed', { viewId: view.id });
-              track('filter_applied', { viewId: view.id, source: 'view_editor' });
+              track('filter_applied', { view: draft.name, filters: filtersToAnalytics(draft.filters) });
             }
-            if (changeFlags.sort) track('view_sort_changed', { viewId: view.id, sort: draft.sort });
-            if (changeFlags.columns) track('view_column_visibility_changed', { viewId: view.id });
           }}
         />
       )}
@@ -452,16 +458,25 @@ function ViewEditor({
               onChange={(event) => update('description', event.target.value)}
             />
           </label>
-          <label>
+          <div className="color-picker-field">
             <span>Color</span>
-            <select value={form.color} onChange={(event) => update('color', event.target.value)}>
-              {colors.map((color) => (
-                <option key={color} value={color}>
-                  {color}
-                </option>
+            <div className="color-swatch-grid" role="radiogroup" aria-label="View color">
+              {viewColors.map((color) => (
+                <button
+                  key={color.value}
+                  type="button"
+                  className={form.color === color.value ? 'selected' : ''}
+                  onClick={() => update('color', color.value)}
+                  role="radio"
+                  aria-checked={form.color === color.value}
+                  title={color.name}
+                >
+                  <span style={{ background: color.value }} />
+                  <em>{color.name}</em>
+                </button>
               ))}
-            </select>
-          </label>
+            </div>
+          </div>
           <label>
             <span>Sort</span>
             <select
@@ -651,7 +666,7 @@ function toFormState(view: TicketView, mode: 'create' | 'edit'): ViewFormState {
   return {
     name: mode === 'create' ? `${view.name} custom` : view.name,
     description: view.description ?? '',
-    color: view.color ?? colors[0],
+    color: view.color ?? viewColors[0].value,
     statuses: view.filters.statuses ?? [],
     priorities: view.filters.priorities ?? [],
     assigneeMode: assignee.mode,
@@ -705,4 +720,23 @@ function toFilters(form: ViewFormState): TicketViewFilters {
   }
 
   return filters;
+}
+
+function filtersToAnalytics(filters: TicketViewFilters): string[] {
+  const values: string[] = [];
+
+  filters.statuses?.forEach((status) => values.push(`status=${status.toLowerCase()}`));
+  filters.priorities?.forEach((priority) => values.push(`priority=${priority.toLowerCase()}`));
+  filters.teams?.forEach((team) => values.push(`team=${team.toLowerCase()}`));
+  filters.slaStates?.forEach((state) => values.push(`sla=${state.toLowerCase()}`));
+
+  if (filters.assignee?.mode === 'currentUser') values.push('assignee=current_user');
+  if (filters.assignee?.mode === 'unassigned') values.push('assignee=unassigned');
+  if (filters.assignee?.mode === 'is') values.push('assignee=specific_agent');
+  if (filters.tagContains) values.push('tag_contains=true');
+  if (filters.companyIs) values.push('company=true');
+  if (filters.createdDateRange) values.push('created_date_range=true');
+  if (filters.updatedDateRange) values.push('updated_date_range=true');
+
+  return values;
 }

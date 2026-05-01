@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, Navigate, useParams } from 'react-router-dom';
 import { track } from '../analytics/analytics';
 import { PriorityBadge, SlaBadge, StatusBadge } from '../components/Badges';
@@ -15,6 +15,7 @@ export function TicketDetailPage() {
   const [reply, setReply] = useState('');
   const [note, setNote] = useState('');
   const [newTag, setNewTag] = useState('');
+  const activeTicketId = ticket?.id;
 
   const customerMeta = useMemo(() => {
     if (!ticket) return [];
@@ -26,6 +27,12 @@ export function TicketDetailPage() {
     ];
   }, [ticket]);
 
+  useEffect(() => {
+    if (activeTicketId) {
+      track('view_opened', { view: 'ticket_detail' });
+    }
+  }, [activeTicketId]);
+
   if (!ticket) {
     return <Navigate to="/inbox" replace />;
   }
@@ -33,17 +40,29 @@ export function TicketDetailPage() {
   const activeTicket = ticket;
 
   function changeStatus(status: TicketStatus) {
+    if (status === activeTicket.status) return;
     updateTicket(activeTicket.id, { status }, `Changed status to ${status}`);
-    track('ticket_status_changed', { ticketId: activeTicket.id, status });
+    track('ticket_status_changed', {
+      ticketId: activeTicket.id,
+      fromStatus: activeTicket.status,
+      toStatus: status,
+    });
   }
 
   function changePriority(priority: Priority) {
+    if (priority === activeTicket.priority) return;
     updateTicket(activeTicket.id, { priority }, `Changed priority to ${priority}`);
-    track('ticket_priority_changed', { ticketId: activeTicket.id, priority });
+    track('ticket_priority_changed', {
+      ticketId: activeTicket.id,
+      fromPriority: activeTicket.priority,
+      toPriority: priority,
+    });
   }
 
   function changeAssignee(agentId: string) {
     const agent = agents.find((item) => item.id === agentId);
+    const toAssignee = agent?.name ?? 'Unassigned';
+    if (toAssignee === activeTicket.assigneeName) return;
     updateTicket(
       activeTicket.id,
       {
@@ -52,7 +71,11 @@ export function TicketDetailPage() {
       },
       agent ? `Assigned to ${agent.name}` : 'Removed assignee',
     );
-    track('ticket_assignee_changed', { ticketId: activeTicket.id, assigneeId: agent?.id ?? null });
+    track('ticket_assignee_changed', {
+      ticketId: activeTicket.id,
+      fromAssignee: activeTicket.assigneeName,
+      toAssignee,
+    });
   }
 
   function changeTeam(team: Team) {
@@ -93,8 +116,13 @@ export function TicketDetailPage() {
           <div className="detail-actions">
             <button
               onClick={() => {
+                if (ticket.assigneeName === currentUser.name) return;
                 assignToCurrentUser([ticket.id]);
-                track('ticket_assignee_changed', { ticketId: ticket.id, assigneeId: currentUser.id });
+                track('ticket_assignee_changed', {
+                  ticketId: ticket.id,
+                  fromAssignee: ticket.assigneeName,
+                  toAssignee: currentUser.name,
+                });
               }}
             >
               Assign to me
@@ -103,7 +131,6 @@ export function TicketDetailPage() {
               className="success-button"
               onClick={() => {
                 changeStatus('Solved');
-                track('ticket_status_changed', { ticketId: ticket.id, status: 'Solved', source: 'mark solved' });
               }}
             >
               Mark solved
@@ -146,7 +173,7 @@ export function TicketDetailPage() {
                 target="reply"
                 onApply={(body, macroName) => {
                   setReply((current) => `${current}${current ? '\n\n' : ''}${body}`);
-                  track('macro_applied', { ticketId: ticket.id, macroName, target: 'reply' });
+                  track('macro_applied', { ticketId: ticket.id, macroName });
                 }}
               />
             </div>
@@ -175,7 +202,7 @@ export function TicketDetailPage() {
                 target="note"
                 onApply={(body, macroName) => {
                   setNote((current) => `${current}${current ? '\n\n' : ''}${body}`);
-                  track('macro_applied', { ticketId: ticket.id, macroName, target: 'note' });
+                  track('macro_applied', { ticketId: ticket.id, macroName });
                 }}
               />
             </div>
