@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { track } from '../analytics/analytics';
+import { FeedbackButton } from '../components/feedback/FeedbackButton';
 import { macros } from '../data/mockMacros';
 import { agents } from '../data/mockUsers';
 import { PRIORITIES, STATUSES, TEAMS } from '../domain/types';
@@ -22,6 +23,11 @@ export function AdminPage() {
           <p className="eyebrow">Configuration</p>
           <h1>Admin</h1>
         </div>
+        <FeedbackButton
+          context="admin_settings"
+          variant="inline"
+          componentLabel="Admin settings"
+        />
       </div>
 
       <div className="admin-grid">

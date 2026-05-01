@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, Navigate, useParams } from 'react-router-dom';
 import { track } from '../analytics/analytics';
 import { PriorityBadge, SlaBadge, StatusBadge } from '../components/Badges';
+import { FeedbackButton } from '../components/feedback/FeedbackButton';
 import { formatDate } from '../components/format';
 import { macros } from '../data/mockMacros';
 import { agents, currentUser } from '../data/mockUsers';
@@ -114,6 +115,12 @@ export function TicketDetailPage() {
             <h1>{ticket.subject}</h1>
           </div>
           <div className="detail-actions">
+            <FeedbackButton
+              context="ticket_detail"
+              variant="icon"
+              ticketId={ticket.id}
+              componentLabel="Ticket detail header"
+            />
             <button
               onClick={() => {
                 if (ticket.assigneeName === currentUser.name) return;
@@ -148,7 +155,15 @@ export function TicketDetailPage() {
         <section className="conversation-panel">
           <div className="section-header">
             <h2>Conversation</h2>
-            <span>{ticket.messages.length} messages</span>
+            <div className="section-title-row">
+              <span>{ticket.messages.length} messages</span>
+              <FeedbackButton
+                context="ticket_conversation"
+                variant="icon"
+                ticketId={ticket.id}
+                componentLabel="Conversation thread"
+              />
+            </div>
           </div>
           <div className="message-list">
             {ticket.messages.map((message) => (
@@ -168,14 +183,30 @@ export function TicketDetailPage() {
         <section className="reply-grid">
           <div className="composer">
             <div className="section-header">
-              <h2>Public reply</h2>
-              <MacroSelector
-                target="reply"
-                onApply={(body, macroName) => {
-                  setReply((current) => `${current}${current ? '\n\n' : ''}${body}`);
-                  track('macro_applied', { ticketId: ticket.id, macroName });
-                }}
-              />
+              <div className="section-title-row">
+                <h2>Public reply</h2>
+                <FeedbackButton
+                  context="ticket_reply_box"
+                  variant="icon"
+                  ticketId={ticket.id}
+                  componentLabel="Public reply box"
+                />
+              </div>
+              <div className="section-title-row">
+                <MacroSelector
+                  target="reply"
+                  onApply={(body, macroName) => {
+                    setReply((current) => `${current}${current ? '\n\n' : ''}${body}`);
+                    track('macro_applied', { ticketId: ticket.id, macroName });
+                  }}
+                />
+                <FeedbackButton
+                  context="ticket_macros"
+                  variant="icon"
+                  ticketId={ticket.id}
+                  componentLabel="Reply macros"
+                />
+              </div>
             </div>
             <textarea
               value={reply}
@@ -197,14 +228,30 @@ export function TicketDetailPage() {
 
           <div className="composer note-composer">
             <div className="section-header">
-              <h2>Internal note</h2>
-              <MacroSelector
-                target="note"
-                onApply={(body, macroName) => {
-                  setNote((current) => `${current}${current ? '\n\n' : ''}${body}`);
-                  track('macro_applied', { ticketId: ticket.id, macroName });
-                }}
-              />
+              <div className="section-title-row">
+                <h2>Internal note</h2>
+                <FeedbackButton
+                  context="ticket_internal_note_box"
+                  variant="icon"
+                  ticketId={ticket.id}
+                  componentLabel="Internal note box"
+                />
+              </div>
+              <div className="section-title-row">
+                <MacroSelector
+                  target="note"
+                  onApply={(body, macroName) => {
+                    setNote((current) => `${current}${current ? '\n\n' : ''}${body}`);
+                    track('macro_applied', { ticketId: ticket.id, macroName });
+                  }}
+                />
+                <FeedbackButton
+                  context="ticket_macros"
+                  variant="icon"
+                  ticketId={ticket.id}
+                  componentLabel="Internal note macros"
+                />
+              </div>
             </div>
             <textarea
               value={note}
@@ -228,16 +275,32 @@ export function TicketDetailPage() {
       <aside className="ticket-side-panel">
         <section className="side-section">
           <h2>Properties</h2>
-          <label>
-            <span>Status</span>
+          <div className="field-block">
+            <div className="field-label-row">
+              <span>Status</span>
+              <FeedbackButton
+                context="ticket_status_selector"
+                variant="icon"
+                ticketId={ticket.id}
+                componentLabel="Status selector"
+              />
+            </div>
             <select value={ticket.status} onChange={(event) => changeStatus(event.target.value as TicketStatus)}>
               {STATUSES.map((status) => (
                 <option key={status}>{status}</option>
               ))}
             </select>
-          </label>
-          <label>
-            <span>Priority</span>
+          </div>
+          <div className="field-block">
+            <div className="field-label-row">
+              <span>Priority</span>
+              <FeedbackButton
+                context="ticket_priority_selector"
+                variant="icon"
+                ticketId={ticket.id}
+                componentLabel="Priority selector"
+              />
+            </div>
             <select
               value={ticket.priority}
               onChange={(event) => changePriority(event.target.value as Priority)}
@@ -246,9 +309,17 @@ export function TicketDetailPage() {
                 <option key={priority}>{priority}</option>
               ))}
             </select>
-          </label>
-          <label>
-            <span>Assignee</span>
+          </div>
+          <div className="field-block">
+            <div className="field-label-row">
+              <span>Assignee</span>
+              <FeedbackButton
+                context="ticket_assignee_selector"
+                variant="icon"
+                ticketId={ticket.id}
+                componentLabel="Assignee selector"
+              />
+            </div>
             <select value={ticket.assigneeId ?? ''} onChange={(event) => changeAssignee(event.target.value)}>
               <option value="">Unassigned</option>
               {agents.map((agent) => (
@@ -257,7 +328,7 @@ export function TicketDetailPage() {
                 </option>
               ))}
             </select>
-          </label>
+          </div>
           <label>
             <span>Team</span>
             <select value={ticket.team} onChange={(event) => changeTeam(event.target.value as Team)}>
@@ -281,7 +352,10 @@ export function TicketDetailPage() {
         </section>
 
         <section className="side-section">
-          <h2>SLA</h2>
+          <div className="section-title-row">
+            <h2>SLA</h2>
+            <FeedbackButton context="ticket_sla" variant="icon" ticketId={ticket.id} componentLabel="SLA" />
+          </div>
           <dl className="meta-list">
             <div>
               <dt>First response</dt>
@@ -295,7 +369,10 @@ export function TicketDetailPage() {
         </section>
 
         <section className="side-section">
-          <h2>Tags</h2>
+          <div className="section-title-row">
+            <h2>Tags</h2>
+            <FeedbackButton context="ticket_tags" variant="icon" ticketId={ticket.id} componentLabel="Tags" />
+          </div>
           <div className="tag-list">
             {ticket.tags.map((tag) => (
               <button key={tag} onClick={() => removeTag(tag)} title="Remove tag">
@@ -316,7 +393,15 @@ export function TicketDetailPage() {
         </section>
 
         <section className="side-section">
-          <h2>Activity</h2>
+          <div className="section-title-row">
+            <h2>Activity</h2>
+            <FeedbackButton
+              context="ticket_activity_timeline"
+              variant="icon"
+              ticketId={ticket.id}
+              componentLabel="Activity timeline"
+            />
+          </div>
           <ol className="timeline">
             {ticket.activity.map((item) => (
               <li key={item.id}>

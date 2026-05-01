@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { track } from '../analytics/analytics';
+import { FeedbackButton } from '../components/feedback/FeedbackButton';
 import { customers } from '../data/mockCustomers';
 import { PRIORITIES, TEAMS, type Priority, type Team } from '../domain/types';
 import { useTickets } from '../state/ticketStore';
@@ -22,6 +23,11 @@ export function CreateTicketPage() {
           <p className="eyebrow">New request</p>
           <h1>Create ticket</h1>
         </div>
+        <FeedbackButton
+          context="create_ticket_form"
+          variant="inline"
+          componentLabel="Create ticket form"
+        />
       </div>
 
       <form

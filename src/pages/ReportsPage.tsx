@@ -1,6 +1,7 @@
 import { useEffect, useMemo } from 'react';
 import { track } from '../analytics/analytics';
 import { PriorityBadge } from '../components/Badges';
+import { FeedbackButton } from '../components/feedback/FeedbackButton';
 import { PRIORITIES, TEAMS } from '../domain/types';
 import { useTickets } from '../state/ticketStore';
 
@@ -41,6 +42,11 @@ export function ReportsPage() {
           <p className="eyebrow">Operations</p>
           <h1>Reports</h1>
         </div>
+        <FeedbackButton
+          context="reports_dashboard"
+          variant="inline"
+          componentLabel="Reports dashboard"
+        />
       </div>
 
       <div className="metric-grid">

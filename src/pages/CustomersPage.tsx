@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { track } from '../analytics/analytics';
 import { PriorityBadge, StatusBadge } from '../components/Badges';
+import { FeedbackButton } from '../components/feedback/FeedbackButton';
 import { formatShortDate } from '../components/format';
 import { customers } from '../data/mockCustomers';
 import { useTickets } from '../state/ticketStore';
@@ -41,6 +42,11 @@ export function CustomersPage() {
             <p className="eyebrow">Directory</p>
             <h1>Customers</h1>
           </div>
+          <FeedbackButton
+            context="customers_list"
+            variant="inline"
+            componentLabel="Customers list"
+          />
         </div>
 
         <div className="table-card">
@@ -82,6 +88,11 @@ export function CustomersPage() {
             <h2>{selectedCustomer.name}</h2>
             <p>{selectedCustomer.company}</p>
           </div>
+          <FeedbackButton
+            context="customer_profile"
+            variant="icon"
+            componentLabel="Customer profile"
+          />
         </div>
         <dl className="meta-list">
           <div>

@@ -3,6 +3,7 @@ import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-r
 import { track } from '../analytics/analytics';
 import { PriorityBadge, SlaBadge, StatusBadge } from '../components/Badges';
 import { EmptyState } from '../components/EmptyState';
+import { FeedbackButton } from '../components/feedback/FeedbackButton';
 import { formatDate, formatShortDate } from '../components/format';
 import { defaultTicketColumns } from '../data/mockViews';
 import { agents, currentUser } from '../data/mockUsers';
@@ -172,6 +173,12 @@ export function InboxPage() {
           {view.description && <p className="view-description">{view.description}</p>}
         </div>
         <div className="view-actions">
+          <FeedbackButton
+            context="ticket_filters"
+            variant="icon"
+            viewId={view.id}
+            componentLabel="Saved view filters"
+          />
           <button className="primary-button" onClick={() => setEditorMode('create')}>
             Create view
           </button>
@@ -206,8 +213,16 @@ export function InboxPage() {
       </div>
 
       <div className="toolbar view-toolbar">
-        <label className="search-field">
-          <span>Search within view</span>
+        <div className="field-block">
+          <div className="field-label-row">
+            <span>Search within view</span>
+            <FeedbackButton
+              context="ticket_search"
+              variant="icon"
+              viewId={view.id}
+              componentLabel="Ticket search"
+            />
+          </div>
           <input
             value={query}
             onBlur={trackSearchUsed}
@@ -218,7 +233,7 @@ export function InboxPage() {
             }}
             placeholder="Subject, customer, company, ticket ID"
           />
-        </label>
+        </div>
         <div className="header-metrics">
           <span>
             <strong>{visibleTickets.length}</strong> in view
@@ -232,6 +247,12 @@ export function InboxPage() {
       {selected.length > 0 && (
         <div className="bulk-bar">
           <strong>{selected.length} selected</strong>
+          <FeedbackButton
+            context="ticket_bulk_actions"
+            variant="icon"
+            viewId={view.id}
+            componentLabel="Bulk actions"
+          />
           <button
             onClick={() => {
               assignToCurrentUser(selected);
@@ -288,6 +309,15 @@ export function InboxPage() {
       )}
 
       <div className="table-card">
+        <div className="table-card-header">
+          <strong>Tickets</strong>
+          <FeedbackButton
+            context="ticket_list"
+            variant="icon"
+            viewId={view.id}
+            componentLabel="Ticket list"
+          />
+        </div>
         <table className="ticket-table">
           <thead>
             <tr>
@@ -333,6 +363,7 @@ export function InboxPage() {
         <ViewEditor
           mode={editorMode}
           baseView={view}
+          viewId={view.id}
           onClose={() => {
             setEditorMode(null);
             if (searchParams.get('createView')) setSearchParams({});
@@ -389,12 +420,14 @@ function TicketCell({ ticket, column }: { ticket: Ticket; column: TicketColumnKe
 function ViewEditor({
   mode,
   baseView,
+  viewId,
   onClose,
   onCreate,
   onUpdate,
 }: {
   mode: 'create' | 'edit';
   baseView: TicketView;
+  viewId: string;
   onClose: () => void;
   onCreate: (view: Omit<TicketView, 'id' | 'type'>) => void;
   onUpdate: (
@@ -443,7 +476,15 @@ function ViewEditor({
             <p className="eyebrow">{mode === 'create' ? 'New view' : 'Custom view'}</p>
             <h2>{mode === 'create' ? 'Create view' : 'Edit view'}</h2>
           </div>
-          <button onClick={onClose}>Close</button>
+          <div className="section-title-row">
+            <FeedbackButton
+              context="view_builder"
+              variant="icon"
+              viewId={viewId}
+              componentLabel="View builder"
+            />
+            <button onClick={onClose}>Close</button>
+          </div>
         </div>
 
         <div className="view-editor-grid">

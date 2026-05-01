@@ -1,285 +1,361 @@
 # Legend Desk
 
-Legend Desk is a frontend-only prototype of an internal Zendesk-like support ticketing system.
+Legend Desk is a frontend-only prototype of an internal support ticketing system inspired by common helpdesk workflows.
 
-The goal is to validate internal support workflows before investing in a real backend, authentication, permissions, data model, integrations, and production analytics. The current version is intentionally lightweight, clickable, and deployable as a static frontend.
+We are not building Zendesk. We are using a realistic frontend prototype to validate product assumptions before committing to backend architecture.
 
-## Product Vision
+The intended loop is:
 
-Legend Desk is planned as an internal company support platform for handling customer and operational support requests in one place.
+```text
+UX -> Behavior -> Insights -> Backend
+```
 
-Long term, the system should support:
+The frontend is used to:
 
-- shared support queues
-- ticket assignment and ownership
-- customer conversation history
-- internal notes and collaboration
-- macros and repeatable workflows
-- saved views for shared and personal ticket queues
-- SLA tracking
-- reports and operational metrics
-- admin configuration for teams, agents, statuses, priorities, macros, and SLA policies
-- analytics for understanding how users interact with the support workflow
+- simulate support workflows
+- validate navigation, ticket handling, saved views, macros, and reporting concepts
+- collect real user behavior through analytics
+- collect contextual user feedback from specific UI areas
+- use evidence to design the backend correctly
 
-The current prototype focuses on validating the workflow and user experience. It does not use real customer data.
+No real customer data should be added to this prototype.
 
-## Current Prototype
-
-This version is built with:
+## Tech Stack
 
 - React
 - TypeScript
 - Vite
 - React Router
-- plain CSS
-- local mock data
-- `localStorage` for simple state persistence
-- GitHub Pages deployment via GitHub Actions
+- Plain CSS
+- Local TypeScript mock data
+- `localStorage` for lightweight prototype state
+- PostHog for analytics and future session replay
+- GitHub Pages for deployment
+- MSW is planned for the next mock API layer; it is not wired in yet
 
-There is no backend yet. All ticket, customer, user, macro, report, and admin data is mocked locally in the frontend.
+## Core Concept
 
-Implemented screens and workflows:
+This project is a validation tool, not a production support platform.
+
+The goal is to answer product and engineering questions before backend work starts:
+
+- Which support workflows are actually used?
+- Which saved views matter?
+- Which filters and fields are required?
+- Where do users get stuck?
+- Which ticket actions happen together?
+- Which UI areas need feedback or redesign?
+
+The backend should be designed only after enough workflow evidence exists.
+
+## Current Prototype Scope
+
+Implemented:
 
 - ticket inbox driven by first-class saved views
-- system views for My tickets, Unassigned, Urgent, Waiting on customer, Recently updated, SLA at risk, Escalated, and Solved this week
-- custom views with local create, edit, duplicate, delete, filters, sorting, and visible columns
-- ticket search within the current view and bulk actions
-- ticket detail page with status, priority, assignee, team, tags, SLA info, conversation, internal notes, and activity timeline
-- public replies and internal notes
-- macro selector that inserts predefined response text
+- system views: My tickets, Unassigned, Urgent, Waiting on customer, Recently updated, SLA at risk, Escalated, Solved this week
+- custom views with local create, edit, duplicate, delete, filters, sorting, visible columns, and color selection
+- sidebar split between main navigation, system views, and my views
+- ticket search within the current view
+- bulk actions
+- ticket detail page with status, priority, assignee, team, tags, SLA, conversation, internal notes, public replies, macros, and activity timeline
 - create ticket flow
-- customers page with customer profile and recent tickets
-- reports dashboard with mocked operational metrics
-- admin page showing future configuration areas
+- customers page with customer profile
+- reports dashboard
+- admin settings mock
+- contextual feedback buttons across major UI areas
+- analytics events through a centralized wrapper
 
-## Analytics Plan
+Mock data:
 
-PostHog is integrated through the central analytics wrapper. UI components do not call PostHog directly.
+- 56 generated tickets
+- 10 customers
+- 8 agents
+- 4 teams: Billing, Technical Support, Compliance, Product Support
 
-Analytics files:
+## Analytics Architecture
+
+All analytics tracking must go through:
 
 ```text
-src/analytics/posthogClient.ts  # initializes PostHog once
-src/analytics/analytics.ts      # exports track() and identify()
+src/analytics/analytics.ts
 ```
 
-Required environment variables:
+Allowed API:
 
-```bash
-VITE_POSTHOG_KEY=your_posthog_project_api_key_here
+```ts
+track(eventName: string, properties?: Record<string, unknown>): void
 ```
 
-Use `.env.example` as the template for local setup. Do not commit `.env`, `.env.local`, or real PostHog keys.
+Optional identity API:
 
-`track()` sends explicit events to PostHog and also logs them in development mode for easier validation. If `VITE_POSTHOG_KEY` is missing, PostHog is not initialized and development logging still works. The EU ingestion endpoint is configured in `src/analytics/posthogClient.ts` as `https://eu.i.posthog.com`. Autocapture and automatic pageview capture are disabled, so there is no global click tracking or DOM-based tracking.
+```ts
+identify(userId: string, properties?: Record<string, unknown>): void
+```
 
-Important actions already call `track()`, including:
+Components must not import or call PostHog directly.
+
+PostHog setup lives in:
+
+```text
+src/analytics/posthogClient.ts
+```
+
+Why this architecture matters:
+
+- components stay decoupled from the analytics vendor
+- PostHog can be replaced later without touching UI code
+- event naming stays centralized and reviewable
+- it prevents random tracking calls and analytics noise
+
+Autocapture and automatic pageview tracking are disabled. Tracking is explicit only.
+
+## Event Model
+
+Events must be semantic. Do not add low-level UI noise such as `button_clicked`.
+
+Current event model:
+
+### Navigation
 
 - `app_opened`
 - `view_opened`
+
+`view_opened` properties:
+
+```ts
+{
+  view: 'inbox' | 'ticket_detail' | 'customers' | 'reports' | 'admin';
+}
+```
+
+### Ticket Lifecycle
+
 - `ticket_opened`
 - `ticket_created`
 - `ticket_status_changed`
 - `ticket_assignee_changed`
 - `ticket_priority_changed`
+
+Expected properties:
+
+```ts
+ticket_opened: {
+  ticketId: string;
+  source: 'view' | 'search' | 'filter';
+}
+
+ticket_created: {
+  ticketId: string;
+  priority: string;
+  team: string;
+}
+
+ticket_status_changed: {
+  ticketId: string;
+  fromStatus: string;
+  toStatus: string;
+}
+
+ticket_assignee_changed: {
+  ticketId: string;
+  fromAssignee?: string;
+  toAssignee: string;
+}
+
+ticket_priority_changed: {
+  ticketId: string;
+  fromPriority: string;
+  toPriority: string;
+}
+```
+
+### Communication
+
 - `ticket_reply_submitted`
 - `internal_note_submitted`
-- `macro_applied`
+
+Properties:
+
+```ts
+{
+  ticketId: string;
+}
+```
+
+### Discovery
+
 - `filter_applied`
 - `search_used`
+
+Expected properties:
+
+```ts
+filter_applied: {
+  view: string;
+  filters: string[];
+}
+
+search_used: {
+  queryLength: number;
+}
+```
+
+Do not send raw search text unless there is a reviewed privacy reason.
+
+### Advanced Actions
+
+- `macro_applied`
 - `bulk_action_completed`
 
-For GitHub Pages deployment, add configuration in GitHub:
+Expected properties:
 
-```text
-Settings -> Secrets and variables -> Actions
+```ts
+macro_applied: {
+  ticketId: string;
+  macroName: string;
+}
+
+bulk_action_completed: {
+  action: 'assign' | 'status_change' | 'tag_add' | string;
+  count: number;
+}
 ```
 
-Required repository secret:
+## Funnels
+
+Funnels should be created in PostHog to understand workflow progression and drop-off.
+
+Recommended funnels:
+
+1. Activation
 
 ```text
-VITE_POSTHOG_KEY
+view_opened -> ticket_opened
 ```
 
-The GitHub Pages workflow passes `secrets.VITE_POSTHOG_KEY` to the Vite build. The PostHog API host is intentionally not configurable through GitHub Actions; it stays in code as the EU endpoint.
-
-Important: in Vite frontend apps, variables prefixed with `VITE_` are embedded into the built JavaScript bundle. The PostHog project API key is not a private backend secret, but it still should not be hardcoded in source code.
-
-To validate events:
-
-1. Run the app with PostHog env vars configured.
-2. Open a ticket, create a ticket, submit a reply, apply a macro, search, or edit a view.
-3. In development, confirm the event appears in the browser console.
-4. In PostHog, open `Product Analytics -> Events` and look for the event name.
-
-Pricing and compliance requirements should be checked when analytics work begins, because vendor plans and company policies can change.
-
-## Using Analytics to Design the Backend
-
-PostHog data can later be used as practical input for backend planning.
-
-The idea is not to blindly generate a backend from analytics. The useful approach is to collect evidence about how people actually use the prototype, then use that evidence to prompt and design the backend more accurately.
-
-Examples of useful analytics signals:
-
-- which ticket views are used most often
-- which filters and sorts people rely on
-- which bulk actions are common
-- which ticket fields change most frequently
-- where users abandon a flow
-- which macros are applied
-- how often users create notes versus public replies
-- which admin configuration areas become important
-
-Those signals can help define:
-
-- real backend entities
-- API endpoints
-- database tables and indexes
-- permission boundaries
-- audit log requirements
-- SLA automation rules
-- reporting requirements
-
-For example, if PostHog shows that users constantly filter by `team`, `assignee`, `status`, `priority`, and `SLA risk`, the backend should treat those as first-class query fields instead of bolting them on later.
-
-Possible future prompt input for backend planning:
+2. Ticket workflow
 
 ```text
-We have a React prototype for an internal support desk.
-PostHog shows that the most used workflows are:
-- opening urgent tickets
-- filtering by team and SLA risk
-- assigning tickets in bulk
-- adding internal notes before public replies
-- applying escalation macros
-
-Design the backend API, database schema, and event/audit model for these workflows.
-Prioritize ticket list performance, permissions, SLA tracking, and future reporting.
+ticket_opened -> ticket_assignee_changed -> ticket_status_changed
 ```
 
-This makes the backend roadmap grounded in observed behavior rather than assumptions. Less guessing, fewer beautiful-but-useless abstractions. Very refreshing. Unfortunately rare.
-
-## Mock API Plan
-
-The current prototype imports mock data directly from local TypeScript files.
-
-That is enough for the first clickable prototype, but the next step can introduce MSW.
-
-MSW would let the frontend call realistic API endpoints while still avoiding a real backend:
+3. Discovery
 
 ```text
-Browser
-  -> React UI
-  -> fetch('/api/tickets')
-  -> MSW intercepts the request
-  -> mocked ticket data is returned
+view_opened -> filter_applied -> ticket_opened
 ```
 
-Why MSW may be useful in the next phase:
+4. Creation
 
-- components can be written against API-like contracts
-- frontend behavior gets closer to the real production architecture
-- request loading and error states can be tested earlier
-- the future backend can replace MSW with less refactoring
+```text
+ticket_created
+```
 
-Planned mock endpoints could include:
+If a future explicit start event is added, this funnel can become:
 
-- `GET /api/tickets`
-- `GET /api/tickets/:id`
-- `POST /api/tickets`
-- `PATCH /api/tickets/:id`
-- `GET /api/customers`
-- `GET /api/reports/summary`
-- `GET /api/admin/config`
+```text
+ticket_created_clicked -> ticket_created
+```
 
-## Architecture Roadmap
+Funnels identify where users drop off. Session replay explains why.
 
-### Phase 1: Clickable Frontend Prototype
+## Session Replay
 
-Status: complete.
+PostHog session replay can be used later to understand:
 
-Purpose:
+- confusion
+- dead clicks
+- missing affordances
+- layout problems
+- unclear copy
+- broken workflow assumptions
 
-- validate navigation and support workflows
-- demo the concept internally
-- collect feedback before backend work
+Recommended analysis workflow:
 
-Includes:
+```text
+funnel -> drop-off -> replay -> product insight -> UX change
+```
 
-- local mock data
-- local state updates
-- `localStorage` persistence
-- first-class saved ticket views
-- GitHub Pages deployment
-- analytics wrapper with console logging
+Before enabling replay, review privacy settings carefully. The prototype should not collect real customer data.
 
-### Phase 2: More Realistic Mock Layer
+## Contextual Feedback
 
-Purpose:
+Users can leave feedback directly from the UI.
 
-- move from imported mock data to API-shaped mocked requests
-- add loading states, empty states, and error states
-- make frontend contracts closer to a future backend
+Feedback uses one event:
 
-Likely additions:
+```text
+feedback_submitted
+```
 
-- MSW
-- mock REST handlers
-- better fixtures for tickets, comments, users, teams, and SLA policies
+Do not create separate feedback events such as `ticket_status_feedback_submitted`.
 
-### Phase 3: Product Analytics
+Feedback is context-based so it can be grouped and filtered in PostHog.
 
-Purpose:
+Implemented contexts include:
 
-- understand how internal users interact with the prototype
-- measure workflow friction before building production backend features
-- collect evidence for backend API and data model decisions
+- `global`
+- `sidebar_navigation`
+- `views_list`
+- `view_builder`
+- `ticket_list`
+- `ticket_filters`
+- `ticket_search`
+- `ticket_bulk_actions`
+- `ticket_detail`
+- `ticket_status_selector`
+- `ticket_assignee_selector`
+- `ticket_priority_selector`
+- `ticket_tags`
+- `ticket_conversation`
+- `ticket_reply_box`
+- `ticket_internal_note_box`
+- `ticket_macros`
+- `ticket_activity_timeline`
+- `ticket_sla`
+- `create_ticket_form`
+- `customers_list`
+- `customer_profile`
+- `reports_dashboard`
+- `admin_settings`
 
-Likely additions:
+Feedback event shape:
 
-- event naming governance
-- dashboards and funnels
-- privacy review for tracked properties
-- analytics summaries that can be used for backend planning prompts
+```ts
+{
+  text: string;
+  context: string;
+  path: string;
+  pageTitle?: string;
+  componentLabel?: string;
+  ticketId?: string;
+  viewId?: string;
+}
+```
 
-PostHog must remain integrated through the existing analytics wrapper, not directly inside pages and components.
+Feedback is not stored in a backend and is not stored in `localStorage`. It is sent to PostHog only.
 
-### Phase 4: Backend and Authentication
+## How To View Data
 
-Purpose:
+In PostHog:
 
-- replace mocked data with real persisted data
-- support real users, permissions, and ticket ownership
+- `Product Analytics -> Events`: raw events, including `feedback_submitted`
+- `Product Analytics -> Insights`: funnels and trends
+- `Dashboards`: overview reporting
+- `Session Replay`: behavior before and after key events, if replay is enabled
 
-Likely additions:
+Useful feedback properties:
 
-- API backend
-- database
-- authentication
-- role-based access
-- audit trail
-- file attachments
-- email or messaging integrations
+- `text`
+- `context`
+- `path`
+- `ticketId`
+- `viewId`
+- `componentLabel`
+- `pageTitle`
 
-### Phase 5: Production Support Platform
-
-Purpose:
-
-- turn the prototype into a reliable internal support tool
-
-Likely additions:
-
-- SLA automation
-- notifications
-- saved views
-- advanced reporting
-- admin editing
-- search indexing
-- customer history
-- integration with company systems
-
-## Local Development
+## Development Setup
 
 Install dependencies:
 
@@ -287,13 +363,13 @@ Install dependencies:
 npm install
 ```
 
-Create a local environment file:
+Create a local env file:
 
 ```bash
 cp .env.example .env
 ```
 
-Then edit `.env`:
+Add the PostHog project key:
 
 ```bash
 VITE_POSTHOG_KEY=your_real_posthog_project_api_key
@@ -301,141 +377,142 @@ VITE_POSTHOG_KEY=your_real_posthog_project_api_key
 
 Restart the dev server after changing `.env`.
 
-Start the development server:
+Start development:
 
 ```bash
 npm run dev
 ```
 
-Open the local URL printed by Vite, usually:
-
-```text
-http://localhost:5173/
-```
-
-## Build
+Common scripts:
 
 ```bash
-npm run build
-```
-
-The production output is written to:
-
-```text
-dist/
-```
-
-## Preview Production Build
-
-```bash
-npm run preview
-```
-
-## Useful Scripts
-
-```bash
-npm run dev      # start local Vite dev server
+npm run dev      # start Vite
 npm run build    # type-check and build
-npm run preview  # preview dist build locally
+npm run preview  # preview production build
 npm run lint     # run ESLint
 ```
 
-## GitHub Pages Deployment
+## Deployment
 
-Deployment is configured with GitHub Actions:
+Deployment is handled by GitHub Pages via GitHub Actions:
 
 ```text
 .github/workflows/deploy.yml
 ```
 
-To deploy:
+Deployment steps:
 
-1. Push the repository to GitHub.
-2. In GitHub, open `Settings -> Pages`.
-3. Set the source to `GitHub Actions`.
-4. Push to the `main` branch or run the workflow manually.
+1. Push to `main`.
+2. GitHub Actions builds the Vite app.
+3. The workflow uploads `dist`.
+4. GitHub Pages serves the static site.
 
-The workflow builds with:
-
-```text
-GITHUB_PAGES=true
-```
-
-When that flag is enabled, `vite.config.ts` sets the Vite `base` path from the GitHub repository name:
-
-```ts
-const repositoryName = process.env.GITHUB_REPOSITORY?.split('/')[1] ?? 'legend';
-```
-
-If the repository is renamed or deployed under a custom path, check `vite.config.ts` and update the fallback repository name if needed.
-
-The workflow also copies:
+Required GitHub secret:
 
 ```text
-dist/index.html -> dist/404.html
+VITE_POSTHOG_KEY
 ```
 
-This allows direct React Router URLs to work on GitHub Pages.
+Configure it in:
 
-## Resetting Local Prototype Data
+```text
+GitHub -> Settings -> Secrets and variables -> Actions -> Secrets
+```
 
-Ticket changes are stored in browser `localStorage`.
+Important:
 
-To reset the prototype back to the original mock data, clear this key:
+- `.env` is not committed
+- `.env.local` is not committed
+- `.env.example` is committed
+- Vite embeds `VITE_` variables into the frontend bundle at build time
+- the PostHog project key is not a backend secret, but it should not be hardcoded in source code
+
+The PostHog EU ingestion endpoint is configured in code:
+
+```text
+https://eu.i.posthog.com
+```
+
+## Product Workflow
+
+The intended validation process:
+
+1. Users interact with the prototype.
+2. Events are collected.
+3. Funnels are analyzed.
+4. Session replay is reviewed for drop-offs or confusion.
+5. Contextual feedback is analyzed.
+6. Insights are generated.
+7. UX is improved.
+8. Backend requirements are designed from observed behavior.
+
+This loop should repeat until the core support workflow is clear.
+
+## Backend Philosophy
+
+The backend should be built after validation, not before.
+
+Backend design should be driven by:
+
+- real workflows
+- repeated user behavior
+- observed ticket lifecycle patterns
+- high-value saved views and filters
+- reporting needs
+- SLA and automation requirements
+- feedback from users testing the prototype
+
+Avoid building backend abstractions from assumptions. A beautiful abstraction for a workflow nobody uses is still useless.
+
+## Rules For Contributors And AI Agents
+
+Follow these rules when extending the project:
+
+- do not add random features without a product reason
+- do not introduce new analytics events without a clear question they answer
+- do not call PostHog directly from UI components
+- keep all tracking behind `src/analytics/analytics.ts`
+- do not store contextual feedback in `localStorage`
+- do not add a backend until validation requires it
+- keep UI changes simple and workflow-focused
+- prefer removing confusing features over adding more controls
+- keep mock data realistic but fake
+- avoid real customer data
+- preserve GitHub Pages deployment
+- run `npm run build` and `npm run lint` before pushing
+
+## Future Work
+
+Only after validation:
+
+- MSW mock API layer
+- real backend API
+- authentication and permissions
+- database schema
+- SLA engine
+- automation rules
+- notifications
+- email or messaging integrations
+- advanced reporting
+- saved view sharing
+- admin editing
+- audit log
+
+Future work should be prioritized by analytics, replay, and feedback evidence.
+
+## Resetting Local Prototype State
+
+Ticket changes are stored locally for prototype convenience.
+
+Reset tickets:
 
 ```text
 legend.support.tickets.v1
 ```
 
-To reset custom saved views, clear this key:
+Reset custom saved views:
 
 ```text
 legend.support.customViews.v1
 ```
 
-## Current Data Model
-
-The prototype includes:
-
-- 56 generated mock tickets
-- 10 mock customers
-- 8 mock agents
-- 4 teams:
-  - Billing
-  - Technical Support
-  - Compliance
-  - Product Support
-
-Ticket statuses:
-
-- New
-- Open
-- Pending
-- Waiting on customer
-- Escalated
-- Solved
-- Closed
-
-Priorities:
-
-- Low
-- Normal
-- High
-- Urgent
-
-System ticket views:
-
-- My tickets
-- Unassigned
-- Urgent
-- Waiting on customer
-- Recently updated
-- SLA at risk
-- Escalated
-- Solved this week
-
-## Notes
-
-This project intentionally does not use real Zendesk assets, logos, branding, or copied UI. It is an original internal support tool prototype inspired by common helpdesk workflows.
-
-No real customer data should be added to this prototype.

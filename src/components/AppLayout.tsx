@@ -8,6 +8,7 @@ import {
   UsersRound,
 } from 'lucide-react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { FeedbackButton } from './feedback/FeedbackButton';
 import { currentUser } from '../data/mockUsers';
 import { applyTicketView } from '../domain/ticketViews';
 import { useTickets } from '../state/ticketStore';
@@ -51,10 +52,24 @@ export function AppLayout() {
             </NavLink>
           ))}
         </nav>
+        <div className="sidebar-feedback-row">
+          <FeedbackButton
+            context="sidebar_navigation"
+            variant="icon"
+            label="Give feedback on navigation"
+            componentLabel="Sidebar navigation"
+          />
+        </div>
 
         <div className="sidebar-section">
           <div className="sidebar-section-title">
             <span>System views</span>
+            <FeedbackButton
+              context="views_list"
+              variant="icon"
+              label="Give feedback on views list"
+              componentLabel="System views list"
+            />
           </div>
           <nav className="nav-list view-nav" aria-label="System ticket views">
             {systemViews.map((view) => (
@@ -70,7 +85,15 @@ export function AppLayout() {
         <div className="sidebar-section">
           <div className="sidebar-section-title">
             <span>My views</span>
-            <button onClick={() => navigate('/views/my-tickets?createView=1')}>New</button>
+            <div className="sidebar-title-actions">
+              <FeedbackButton
+                context="views_list"
+                variant="icon"
+                label="Give feedback on my views"
+                componentLabel="My views list"
+              />
+              <button onClick={() => navigate('/views/my-tickets?createView=1')}>New</button>
+            </div>
           </div>
           <nav className="nav-list view-nav" aria-label="My ticket views">
             {customViews.map((view) => (
@@ -123,6 +146,7 @@ export function AppLayout() {
           <Outlet />
         </main>
       </div>
+      <FeedbackButton context="global" variant="floating" label="Feedback" />
     </div>
   );
 }
