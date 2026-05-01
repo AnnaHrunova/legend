@@ -1,28 +1,20 @@
 import {
   BarChart3,
-  CircleAlert,
-  Clock3,
   Inbox,
   LayoutDashboard,
-  LifeBuoy,
   Plus,
   Search,
   Settings,
-  TicketCheck,
-  UserRound,
   UsersRound,
 } from 'lucide-react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { currentUser } from '../data/mockUsers';
+import { applyTicketView } from '../domain/ticketViews';
 import { useTickets } from '../state/ticketStore';
+import { useTicketViews } from '../state/viewStore';
 
 const navItems = [
-  { label: 'Inbox', to: '/inbox', icon: Inbox },
-  { label: 'My tickets', to: '/my-tickets', icon: UserRound },
-  { label: 'Unassigned', to: '/unassigned', icon: LifeBuoy },
-  { label: 'Urgent', to: '/urgent', icon: CircleAlert },
-  { label: 'Waiting on customer', to: '/waiting-on-customer', icon: Clock3 },
-  { label: 'All tickets', to: '/all-tickets', icon: TicketCheck },
+  { label: 'Inbox', to: '/views/my-tickets', icon: Inbox },
   { label: 'Customers', to: '/customers', icon: UsersRound },
   { label: 'Reports', to: '/reports', icon: BarChart3 },
   { label: 'Admin', to: '/admin', icon: Settings },
@@ -31,9 +23,12 @@ const navItems = [
 export function AppLayout() {
   const navigate = useNavigate();
   const { tickets } = useTickets();
-  const urgentCount = tickets.filter((ticket) => ticket.priority === 'Urgent').length;
-  const waitingCount = tickets.filter((ticket) => ticket.status === 'Waiting on customer').length;
-  const myCount = tickets.filter((ticket) => ticket.assigneeId === currentUser.id).length;
+  const { systemViews, customViews } = useTicketViews();
+
+  function viewCount(viewId: string) {
+    const view = [...systemViews, ...customViews].find((item) => item.id === viewId);
+    return view ? applyTicketView(tickets, view, currentUser.id).length : 0;
+  }
 
   return (
     <div className="app-shell">
@@ -53,12 +48,32 @@ export function AppLayout() {
             <NavLink key={to} to={to} className="nav-link">
               <Icon size={18} />
               <span>{label}</span>
-              {label === 'My tickets' && <em>{myCount}</em>}
-              {label === 'Urgent' && <em>{urgentCount}</em>}
-              {label === 'Waiting on customer' && <em>{waitingCount}</em>}
             </NavLink>
           ))}
         </nav>
+
+        <div className="sidebar-section">
+          <div className="sidebar-section-title">
+            <span>Views</span>
+            <button onClick={() => navigate('/views/my-tickets?createView=1')}>New</button>
+          </div>
+          <nav className="nav-list view-nav" aria-label="Ticket views">
+            {systemViews.map((view) => (
+              <NavLink key={view.id} to={`/views/${view.id}`} className="nav-link view-link">
+                <i style={{ background: view.color }} />
+                <span>{view.name}</span>
+                <em>{viewCount(view.id)}</em>
+              </NavLink>
+            ))}
+            {customViews.map((view) => (
+              <NavLink key={view.id} to={`/views/${view.id}`} className="nav-link view-link">
+                <i style={{ background: view.color ?? '#64748b' }} />
+                <span>{view.name}</span>
+                <em>{viewCount(view.id)}</em>
+              </NavLink>
+            ))}
+          </nav>
+        </div>
       </aside>
 
       <div className="workspace">
@@ -68,7 +83,7 @@ export function AppLayout() {
             onSubmit={(event) => {
               event.preventDefault();
               const query = new FormData(event.currentTarget).get('q')?.toString().trim();
-              navigate(query ? `/inbox?search=${encodeURIComponent(query)}` : '/inbox');
+              navigate(query ? `/views/my-tickets?search=${encodeURIComponent(query)}` : '/views/my-tickets');
             }}
           >
             <Search size={17} />

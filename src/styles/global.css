@@ -113,6 +113,38 @@ a {
   gap: 4px;
 }
 
+.sidebar-section {
+  display: grid;
+  gap: 8px;
+  min-height: 0;
+}
+
+.sidebar-section-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 10px;
+  color: #aab7ca;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.sidebar-section-title button {
+  min-height: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #eef4ff;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.view-nav {
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
 .nav-link {
   min-height: 40px;
   display: grid;
@@ -138,6 +170,13 @@ a {
   background: rgba(22, 163, 148, 0.2);
   padding: 2px 6px;
   border-radius: 999px;
+}
+
+.view-link i {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  justify-self: center;
 }
 
 .workspace {
@@ -223,7 +262,8 @@ a {
 .summary-row,
 .bulk-bar,
 .form-actions,
-.detail-actions {
+.detail-actions,
+.view-actions {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -266,6 +306,49 @@ a {
   font-size: 13px;
 }
 
+.view-description {
+  max-width: 720px;
+  margin: 6px 0 0;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+.view-actions {
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.view-meta-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 210px;
+  gap: 14px;
+  align-items: end;
+}
+
+.filter-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.filter-chip-list span {
+  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid #d6e2ef;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #46566d;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.compact-label {
+  min-width: 0;
+}
+
 .tabs {
   display: flex;
   gap: 6px;
@@ -279,7 +362,9 @@ a {
 .composer button,
 .form-actions button,
 .section-header button,
+.view-actions button,
 .inline-form button,
+.danger-button,
 .primary-button,
 .success-button {
   min-height: 36px;
@@ -320,11 +405,22 @@ a {
   color: var(--green);
 }
 
+.danger-button {
+  border-color: #f3b3ad;
+  background: #fff1f2;
+  color: var(--red);
+}
+
 .toolbar {
   display: grid;
   grid-template-columns: minmax(220px, 1.4fr) repeat(6, minmax(126px, 1fr));
   gap: 10px;
   align-items: end;
+}
+
+.view-toolbar {
+  grid-template-columns: minmax(260px, 1fr) auto;
+  align-items: center;
 }
 
 label {
@@ -355,6 +451,11 @@ input,
 select {
   height: 38px;
   padding: 0 10px;
+}
+
+select[multiple] {
+  height: 108px;
+  padding: 8px;
 }
 
 textarea {
@@ -733,6 +834,66 @@ textarea:focus {
   gap: 16px;
 }
 
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(15, 23, 42, 0.48);
+}
+
+.view-editor {
+  width: min(980px, 100%);
+  max-height: min(88vh, 920px);
+  overflow: auto;
+  display: grid;
+  gap: 16px;
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.24);
+}
+
+.view-editor-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.checkbox-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.checkbox-row input {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+}
+
+.column-picker {
+  display: grid;
+  gap: 10px;
+}
+
+.column-picker > span {
+  color: #59687d;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.column-picker > div {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px 14px;
+}
+
 .form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -891,7 +1052,14 @@ textarea:focus {
 
 @media (max-width: 1180px) {
   .toolbar,
+  .view-toolbar,
   .metric-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .view-meta-row,
+  .view-editor-grid,
+  .column-picker > div {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -934,7 +1102,10 @@ textarea:focus {
   .reply-grid,
   .form-grid,
   .report-grid,
-  .admin-grid {
+  .admin-grid,
+  .view-editor-grid,
+  .column-picker > div,
+  .view-meta-row {
     grid-template-columns: 1fr;
   }
 }
@@ -942,6 +1113,7 @@ textarea:focus {
 @media (max-width: 620px) {
   .nav-list,
   .toolbar,
+  .view-toolbar,
   .metric-grid {
     grid-template-columns: 1fr;
   }

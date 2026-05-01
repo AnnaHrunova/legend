@@ -13,6 +13,57 @@ export type Team = 'Billing' | 'Technical Support' | 'Compliance' | 'Product Sup
 
 export type SlaState = 'Healthy' | 'Due soon' | 'At risk' | 'Breached';
 
+export type TicketSortOption = 'newest' | 'oldest' | 'priority' | 'sla' | 'recently-updated';
+
+export type TicketColumnKey =
+  | 'id'
+  | 'subject'
+  | 'customer'
+  | 'company'
+  | 'priority'
+  | 'status'
+  | 'assignee'
+  | 'team'
+  | 'tags'
+  | 'createdAt'
+  | 'updatedAt'
+  | 'sla';
+
+export type TicketAssigneeFilter =
+  | { mode: 'any' }
+  | { mode: 'is'; agentId: string }
+  | { mode: 'unassigned' }
+  | { mode: 'currentUser' };
+
+export interface TicketDateRangeFilter {
+  from?: string;
+  to?: string;
+  preset?: 'last7days';
+}
+
+export interface TicketViewFilters {
+  statuses?: TicketStatus[];
+  priorities?: Priority[];
+  assignee?: TicketAssigneeFilter;
+  teams?: Team[];
+  tagContains?: string;
+  companyIs?: string;
+  slaStates?: SlaState[];
+  createdDateRange?: TicketDateRangeFilter;
+  updatedDateRange?: TicketDateRangeFilter;
+}
+
+export type TicketView = {
+  id: string;
+  name: string;
+  description?: string;
+  type: 'system' | 'custom';
+  color?: string;
+  filters: TicketViewFilters;
+  sort: TicketSortOption;
+  visibleColumns: TicketColumnKey[];
+};
+
 export interface Agent {
   id: string;
   name: string;
@@ -104,3 +155,18 @@ export const PRIORITIES: Priority[] = ['Low', 'Normal', 'High', 'Urgent'];
 export const TEAMS: Team[] = ['Billing', 'Technical Support', 'Compliance', 'Product Support'];
 
 export const SLA_STATES: SlaState[] = ['Healthy', 'Due soon', 'At risk', 'Breached'];
+
+export const TICKET_COLUMNS: { key: TicketColumnKey; label: string }[] = [
+  { key: 'id', label: 'Ticket ID' },
+  { key: 'subject', label: 'Subject' },
+  { key: 'customer', label: 'Customer' },
+  { key: 'company', label: 'Company' },
+  { key: 'priority', label: 'Priority' },
+  { key: 'status', label: 'Status' },
+  { key: 'assignee', label: 'Assignee' },
+  { key: 'team', label: 'Team' },
+  { key: 'tags', label: 'Tags' },
+  { key: 'createdAt', label: 'Created' },
+  { key: 'updatedAt', label: 'Updated' },
+  { key: 'sla', label: 'SLA' },
+];

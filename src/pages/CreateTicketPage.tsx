@@ -41,7 +41,7 @@ export function CreateTicketPage() {
               .map((tag) => tag.trim().toLowerCase())
               .filter(Boolean),
           });
-          track('ticket created', { ticketId: ticket.id, priority, team });
+          track('ticket_created', { ticketId: ticket.id, priority, team });
           navigate(`/tickets/${ticket.id}`);
         }}
       >

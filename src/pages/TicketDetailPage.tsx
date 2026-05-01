@@ -34,12 +34,12 @@ export function TicketDetailPage() {
 
   function changeStatus(status: TicketStatus) {
     updateTicket(activeTicket.id, { status }, `Changed status to ${status}`);
-    track('status changed', { ticketId: activeTicket.id, status });
+    track('ticket_status_changed', { ticketId: activeTicket.id, status });
   }
 
   function changePriority(priority: Priority) {
     updateTicket(activeTicket.id, { priority }, `Changed priority to ${priority}`);
-    track('priority changed', { ticketId: activeTicket.id, priority });
+    track('ticket_priority_changed', { ticketId: activeTicket.id, priority });
   }
 
   function changeAssignee(agentId: string) {
@@ -52,7 +52,7 @@ export function TicketDetailPage() {
       },
       agent ? `Assigned to ${agent.name}` : 'Removed assignee',
     );
-    track('assignee changed', { ticketId: activeTicket.id, assigneeId: agent?.id ?? null });
+    track('ticket_assignee_changed', { ticketId: activeTicket.id, assigneeId: agent?.id ?? null });
   }
 
   function changeTeam(team: Team) {
@@ -94,7 +94,7 @@ export function TicketDetailPage() {
             <button
               onClick={() => {
                 assignToCurrentUser([ticket.id]);
-                track('assignee changed', { ticketId: ticket.id, assigneeId: currentUser.id });
+                track('ticket_assignee_changed', { ticketId: ticket.id, assigneeId: currentUser.id });
               }}
             >
               Assign to me
@@ -103,7 +103,7 @@ export function TicketDetailPage() {
               className="success-button"
               onClick={() => {
                 changeStatus('Solved');
-                track('status changed', { ticketId: ticket.id, status: 'Solved', source: 'mark solved' });
+                track('ticket_status_changed', { ticketId: ticket.id, status: 'Solved', source: 'mark solved' });
               }}
             >
               Mark solved
@@ -146,7 +146,7 @@ export function TicketDetailPage() {
                 target="reply"
                 onApply={(body, macroName) => {
                   setReply((current) => `${current}${current ? '\n\n' : ''}${body}`);
-                  track('macro applied', { ticketId: ticket.id, macroName, target: 'reply' });
+                  track('macro_applied', { ticketId: ticket.id, macroName, target: 'reply' });
                 }}
               />
             </div>
@@ -160,7 +160,7 @@ export function TicketDetailPage() {
               disabled={!reply.trim()}
               onClick={() => {
                 addPublicReply(ticket.id, reply.trim());
-                track('public reply added', { ticketId: ticket.id });
+                track('ticket_reply_submitted', { ticketId: ticket.id });
                 setReply('');
               }}
             >
@@ -175,7 +175,7 @@ export function TicketDetailPage() {
                 target="note"
                 onApply={(body, macroName) => {
                   setNote((current) => `${current}${current ? '\n\n' : ''}${body}`);
-                  track('macro applied', { ticketId: ticket.id, macroName, target: 'note' });
+                  track('macro_applied', { ticketId: ticket.id, macroName, target: 'note' });
                 }}
               />
             </div>
@@ -188,7 +188,7 @@ export function TicketDetailPage() {
               disabled={!note.trim()}
               onClick={() => {
                 addInternalNote(ticket.id, note.trim());
-                track('internal note added', { ticketId: ticket.id });
+                track('internal_note_submitted', { ticketId: ticket.id });
                 setNote('');
               }}
             >
