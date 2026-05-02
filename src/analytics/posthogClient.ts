@@ -11,6 +11,7 @@ if (isPostHogEnabled) {
       api_host: POSTHOG_HOST,
       capture_pageview: false,
       autocapture: false,
+      request_batching: false,
     });
 
     if (import.meta.env.DEV) {

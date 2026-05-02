@@ -1,7 +1,8 @@
 import { useEffect } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
-import { track } from './analytics/analytics';
+import { identify, track } from './analytics/analytics';
 import { AppLayout } from './components/AppLayout';
+import { currentUser } from './data/mockUsers';
 import { AdminPage } from './pages/AdminPage';
 import { CreateTicketPage } from './pages/CreateTicketPage';
 import { CustomersPage } from './pages/CustomersPage';
@@ -12,6 +13,11 @@ import { TopicsAnalyticsPage } from './pages/TopicsAnalyticsPage';
 
 export default function App() {
   useEffect(() => {
+    identify(currentUser.id, {
+      role: currentUser.role,
+      team: currentUser.team,
+      mockUser: true,
+    });
     track('app_opened');
   }, []);
 
