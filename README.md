@@ -62,6 +62,7 @@ Implemented:
 - create ticket flow
 - customers page with customer profile
 - reports dashboard
+- topics analytics heatmap with deterministic embeddings, k-means clustering, time buckets, playback, and drill-down
 - admin settings mock
 - contextual feedback buttons across major UI areas
 - analytics events through a centralized wrapper
@@ -72,6 +73,34 @@ Mock data:
 - 10 customers
 - 8 agents
 - 4 teams: Billing, Technical Support, Compliance, Product Support
+
+## Topics Analytics Prototype
+
+The `/analytics/topics` page is a frontend-only analytics experiment.
+
+It generates a deterministic dataset of more than 1,000 synthetic support tickets across the last 84 days. Topic distribution changes over time so the heatmap has meaningful trends:
+
+- billing volume increases after the first month
+- bug reports spike later in the period
+- login/auth issues decline over time
+- integrations and notifications have smaller later-stage spikes
+
+The pipeline lives in:
+
+```text
+src/analytics/topics/
+```
+
+Pipeline steps:
+
+1. Generate mock tickets with realistic subjects, descriptions, dates, and tags.
+2. Compute deterministic hash/keyword embeddings in the browser.
+3. Cluster tickets with k-means.
+4. Label clusters from dominant keywords.
+5. Aggregate topic counts by day or week.
+6. Render a heatmap with timeline playback and cell drill-down.
+
+There are no external ML APIs and no backend.
 
 ## Analytics Architecture
 
@@ -515,4 +544,3 @@ Reset custom saved views:
 ```text
 legend.support.customViews.v1
 ```
-

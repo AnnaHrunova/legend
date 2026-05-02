@@ -8,6 +8,7 @@ import { CustomersPage } from './pages/CustomersPage';
 import { InboxPage } from './pages/InboxPage';
 import { ReportsPage } from './pages/ReportsPage';
 import { TicketDetailPage } from './pages/TicketDetailPage';
+import { TopicsAnalyticsPage } from './pages/TopicsAnalyticsPage';
 
 export default function App() {
   useEffect(() => {
@@ -32,6 +33,7 @@ export default function App() {
         <Route path="tickets/:ticketId" element={<TicketDetailPage />} />
         <Route path="customers" element={<CustomersPage />} />
         <Route path="reports" element={<ReportsPage />} />
+        <Route path="analytics/topics" element={<TopicsAnalyticsPage />} />
         <Route path="admin" element={<AdminPage />} />
       </Route>
     </Routes>
