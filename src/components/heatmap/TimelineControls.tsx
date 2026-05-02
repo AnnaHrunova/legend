@@ -1,5 +1,5 @@
 import { ChevronLeft, ChevronRight, Pause, Play } from 'lucide-react';
-import type { TimeGranularity } from '../../analytics/topics/aggregateByTime';
+import type { TimeGranularity } from '../../analytics/topics/aggregation';
 
 type TimelineControlsProps = {
   buckets: string[];

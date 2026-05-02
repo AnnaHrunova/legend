@@ -22,5 +22,8 @@ export type FeedbackContext =
   | 'customers_list'
   | 'customer_profile'
   | 'reports_dashboard'
+  | 'topics_heatmap'
+  | 'topics_grouping_control'
+  | 'topics_timeline'
+  | 'topics_details_panel'
   | 'admin_settings';
-

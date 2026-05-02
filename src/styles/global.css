@@ -1716,6 +1716,14 @@ textarea:focus {
   font-size: 13px;
 }
 
+.topics-card-controls {
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
 .topics-sort-label {
   min-width: 190px;
   display: grid;
@@ -1764,6 +1772,18 @@ textarea:focus {
   font-size: 12px;
   font-weight: 850;
   text-align: right;
+}
+
+.topics-timeline-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.topics-timeline-row .timeline-controls.refined {
+  margin-bottom: 0;
 }
 
 .topics-heatmap.refined {
@@ -2129,7 +2149,8 @@ textarea:focus {
   }
 
   .timeline-controls,
-  .timeline-controls.refined {
+  .timeline-controls.refined,
+  .topics-timeline-row {
     grid-template-columns: 1fr;
   }
 
@@ -2139,6 +2160,7 @@ textarea:focus {
   }
 
   .topics-card-header,
+  .topics-card-controls,
   .heatmap-footer {
     align-items: flex-start;
     flex-direction: column;

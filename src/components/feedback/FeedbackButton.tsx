@@ -9,6 +9,9 @@ type FeedbackButtonProps = {
   variant?: 'inline' | 'floating' | 'icon';
   ticketId?: string;
   viewId?: string;
+  topicId?: string;
+  projectId?: string;
+  timeBucket?: string;
   componentLabel?: string;
 };
 
@@ -20,6 +23,9 @@ export function FeedbackButton({
   variant = 'inline',
   ticketId,
   viewId,
+  topicId,
+  projectId,
+  timeBucket,
   componentLabel,
 }: FeedbackButtonProps) {
   const [isOpen, setIsOpen] = useState(false);
@@ -64,6 +70,9 @@ export function FeedbackButton({
       ...(componentLabel ? { componentLabel } : {}),
       ...(ticketId ? { ticketId } : {}),
       ...(viewId ? { viewId } : {}),
+      ...(topicId ? { topicId } : {}),
+      ...(projectId ? { projectId } : {}),
+      ...(timeBucket ? { timeBucket } : {}),
     });
 
     setText('');
@@ -129,4 +138,3 @@ export function FeedbackButton({
     </>
   );
 }
-
