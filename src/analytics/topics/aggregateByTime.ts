@@ -1,7 +1,7 @@
-import type { TopicSummary } from './labelTopics';
 import type { TopicTicket } from './generateMockTickets';
+import type { TopicSummary } from './labelTopics';
 
-export type TimeGranularity = 'day' | 'week';
+export type TimeGranularity = 'week' | 'month';
 
 export type TopicBucket = {
   topicId: number;
@@ -36,7 +36,7 @@ export function aggregateByTime(
   ticketsWithTopics.forEach((ticket) => {
     const timeBucket = bucketFor(ticket.createdAt, granularity);
     bucketSet.add(timeBucket);
-    const key = `${ticket.topicId}-${timeBucket}`;
+    const key = cellKey(ticket.topicId, timeBucket);
     counts.set(key, (counts.get(key) ?? 0) + 1);
   });
 
@@ -46,7 +46,7 @@ export function aggregateByTime(
 
   topics.forEach((topic) => {
     buckets.forEach((timeBucket) => {
-      const count = counts.get(`${topic.id}-${timeBucket}`) ?? 0;
+      const count = counts.get(cellKey(topic.id, timeBucket)) ?? 0;
       maxCount = Math.max(maxCount, count);
       cells.push({ topicId: topic.id, timeBucket, count });
     });
@@ -59,8 +59,9 @@ export function bucketFor(value: string, granularity: TimeGranularity) {
   const date = new Date(value);
   date.setHours(0, 0, 0, 0);
 
-  if (granularity === 'day') {
-    return date.toISOString().slice(0, 10);
+  if (granularity === 'month') {
+    date.setDate(1);
+    return date.toISOString().slice(0, 7);
   }
 
   const day = date.getDay();
@@ -80,3 +81,16 @@ export function filterTicketsForBucket(
     .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
 }
 
+export function getCellCount(cells: TopicBucket[], topicId: number, timeBucket: string) {
+  return cells.find((cell) => cell.topicId === topicId && cell.timeBucket === timeBucket)?.count ?? 0;
+}
+
+export function growthBetween(current: number, previous: number) {
+  if (previous === 0 && current === 0) return 0;
+  if (previous === 0) return 100;
+  return Math.round(((current - previous) / previous) * 100);
+}
+
+function cellKey(topicId: number, timeBucket: string) {
+  return `${topicId}-${timeBucket}`;
+}

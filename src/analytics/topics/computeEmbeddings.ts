@@ -15,6 +15,8 @@ const topicKeywords = [
   ['integration', 'webhook', 'api', 'syncing', 'oauth', 'crm', 'slack'],
   ['notification', 'email', 'alerts', 'digest', 'push', 'delayed'],
   ['account', 'settings', 'workspace', 'owner', 'role', 'profile'],
+  ['compliance', 'security', 'audit', 'retention', 'processor', 'legal'],
+  ['reporting', 'dashboard', 'analytics', 'report', 'csv', 'chart'],
 ];
 
 export function computeEmbeddings(tickets: TopicTicket[]): TicketEmbedding[] {
@@ -92,4 +94,3 @@ const stopWords = new Set([
   'customer',
   'users',
 ]);
-

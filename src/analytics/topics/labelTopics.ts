@@ -18,6 +18,8 @@ const labelRules = [
   { label: 'Integrations', keywords: ['integration', 'webhook', 'api', 'oauth', 'syncing'] },
   { label: 'Notifications', keywords: ['notification', 'email', 'alerts', 'digest', 'push'] },
   { label: 'Account Settings', keywords: ['account', 'settings', 'workspace', 'owner', 'role'] },
+  { label: 'Compliance', keywords: ['compliance', 'security', 'audit', 'retention', 'legal'] },
+  { label: 'Reporting', keywords: ['reporting', 'dashboard', 'analytics', 'csv', 'chart'] },
 ];
 
 export function labelTopics(tickets: TopicTicket[], assignments: Map<string, number>): TopicSummary[] {
@@ -77,4 +79,3 @@ function growthRate(tickets: TopicTicket[]) {
 function titleCase(value: string) {
   return value.replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
-

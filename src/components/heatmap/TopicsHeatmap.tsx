@@ -1,4 +1,4 @@
-import type { TopicBucket } from '../../analytics/topics/aggregateByTime';
+import { getCellCount, growthBetween, type TimeGranularity, type TopicBucket } from '../../analytics/topics/aggregateByTime';
 import type { TopicSummary } from '../../analytics/topics/labelTopics';
 
 type TopicsHeatmapProps = {
@@ -7,8 +7,10 @@ type TopicsHeatmapProps = {
   cells: TopicBucket[];
   maxCount: number;
   activeBucketIndex: number;
+  granularity: TimeGranularity;
   selected?: { topicId: number; timeBucket: string };
   onSelect: (topicId: number, timeBucket: string) => void;
+  onTopicSelect?: (topicId: number) => void;
 };
 
 export function TopicsHeatmap({
@@ -17,21 +19,26 @@ export function TopicsHeatmap({
   cells,
   maxCount,
   activeBucketIndex,
+  granularity,
   selected,
   onSelect,
+  onTopicSelect,
 }: TopicsHeatmapProps) {
-  const visibleBuckets = buckets.slice(0, activeBucketIndex + 1);
-
   return (
     <div className="topics-heatmap-shell">
       <div
-        className="topics-heatmap"
-        style={{ gridTemplateColumns: `190px repeat(${visibleBuckets.length}, minmax(28px, 1fr))` }}
+        className="topics-heatmap refined"
+        style={{ gridTemplateColumns: `220px repeat(${buckets.length}, minmax(48px, 1fr))` }}
       >
         <div className="heatmap-corner">Topic</div>
-        {visibleBuckets.map((bucket) => (
-          <div key={bucket} className="heatmap-column-label">
-            {formatBucket(bucket)}
+        {buckets.map((bucket, index) => (
+          <div
+            key={bucket}
+            className={`heatmap-column-label ${index === activeBucketIndex ? 'active' : ''} ${
+              index > activeBucketIndex ? 'future' : ''
+            }`}
+          >
+            {formatBucket(bucket, granularity)}
           </div>
         ))}
 
@@ -39,11 +46,14 @@ export function TopicsHeatmap({
           <TopicRow
             key={topic.id}
             topic={topic}
-            buckets={visibleBuckets}
+            buckets={buckets}
             cells={cells}
             maxCount={maxCount}
+            activeBucketIndex={activeBucketIndex}
+            granularity={granularity}
             selected={selected}
             onSelect={onSelect}
+            onTopicSelect={onTopicSelect}
           />
         ))}
       </div>
@@ -56,38 +66,58 @@ function TopicRow({
   buckets,
   cells,
   maxCount,
+  activeBucketIndex,
+  granularity,
   selected,
   onSelect,
+  onTopicSelect,
 }: {
   topic: TopicSummary;
   buckets: string[];
   cells: TopicBucket[];
   maxCount: number;
+  activeBucketIndex: number;
+  granularity: TimeGranularity;
   selected?: { topicId: number; timeBucket: string };
   onSelect: (topicId: number, timeBucket: string) => void;
+  onTopicSelect?: (topicId: number) => void;
 }) {
   return (
     <>
-      <div className="heatmap-topic-label">
+      <button
+        type="button"
+        className="heatmap-topic-label refined"
+        onClick={() => {
+          onTopicSelect?.(topic.id);
+          if (!onTopicSelect) {
+            onSelect(topic.id, buckets[activeBucketIndex]);
+          }
+        }}
+      >
         <strong>{topic.label}</strong>
-        <span>{topic.total} tickets</span>
-      </div>
-      {buckets.map((bucket) => {
-        const cell = cells.find((item) => item.topicId === topic.id && item.timeBucket === bucket);
-        const count = cell?.count ?? 0;
+        <span>{topic.keywords.slice(0, 3).join(', ')}</span>
+      </button>
+      {buckets.map((bucket, index) => {
+        const count = getCellCount(cells, topic.id, bucket);
+        const previous = index > 0 ? getCellCount(cells, topic.id, buckets[index - 1]) : 0;
+        const growth = growthBetween(count, previous);
         const intensity = maxCount ? count / maxCount : 0;
         const isSelected = selected?.topicId === topic.id && selected.timeBucket === bucket;
+        const isActive = index === activeBucketIndex;
+        const isFuture = index > activeBucketIndex;
 
         return (
           <button
             key={`${topic.id}-${bucket}`}
             type="button"
-            className={`heatmap-cell ${isSelected ? 'selected' : ''}`}
+            className={`heatmap-cell refined ${isSelected ? 'selected' : ''} ${isActive ? 'active-column' : ''} ${
+              isFuture ? 'future' : ''
+            }`}
             style={{ background: colorFor(intensity) }}
-            title={`${topic.label}: ${count} tickets on ${bucket}`}
+            title={`${topic.label} · ${formatBucket(bucket, granularity)} · ${count} tickets · ${formatGrowth(growth)} vs previous`}
             onClick={() => onSelect(topic.id, bucket)}
           >
-            <span>{count || ''}</span>
+            <span>{count}</span>
           </button>
         );
       })}
@@ -96,12 +126,22 @@ function TopicRow({
 }
 
 function colorFor(intensity: number) {
-  const alpha = 0.12 + intensity * 0.78;
-  return `rgba(37, 99, 235, ${alpha})`;
+  const lightness = 96 - intensity * 42;
+  const saturation = 76 - intensity * 18;
+  return `hsl(211deg ${saturation}% ${lightness}%)`;
 }
 
-function formatBucket(bucket: string) {
+function formatGrowth(value: number) {
+  if (value === 0) return 'flat';
+  return `${value > 0 ? '+' : ''}${value}%`;
+}
+
+function formatBucket(bucket: string, granularity: TimeGranularity) {
+  if (granularity === 'month') {
+    const date = new Date(`${bucket}-01T00:00:00`);
+    return new Intl.DateTimeFormat('en', { month: 'short' }).format(date);
+  }
+
   const date = new Date(`${bucket}T00:00:00`);
   return new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric' }).format(date);
 }
-

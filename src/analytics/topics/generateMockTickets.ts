@@ -1,3 +1,5 @@
+import type { Priority, TicketStatus } from '../../domain/types';
+
 export type SupportTopicKey =
   | 'billing'
   | 'login'
@@ -6,7 +8,9 @@ export type SupportTopicKey =
   | 'performance'
   | 'integrations'
   | 'notifications'
-  | 'account';
+  | 'account'
+  | 'compliance'
+  | 'reporting';
 
 export type TopicTicket = {
   id: string;
@@ -14,11 +18,14 @@ export type TopicTicket = {
   description: string;
   createdAt: string;
   tags: string[];
+  status: TicketStatus;
+  priority: Priority;
   seedTopic: SupportTopicKey;
 };
 
 type TopicTemplate = {
   tag: SupportTopicKey;
+  label: string;
   subjects: string[];
   descriptions: string[];
   tags: string[];
@@ -27,6 +34,7 @@ type TopicTemplate = {
 const templates: Record<SupportTopicKey, TopicTemplate> = {
   billing: {
     tag: 'billing',
+    label: 'Billing & Payments',
     tags: ['billing', 'payment', 'invoice'],
     subjects: [
       'Invoice total does not match renewal quote',
@@ -44,6 +52,7 @@ const templates: Record<SupportTopicKey, TopicTemplate> = {
   },
   login: {
     tag: 'login',
+    label: 'Login & Authentication',
     tags: ['login', 'auth', 'sso'],
     subjects: [
       'SSO login redirects to blank page',
@@ -61,6 +70,7 @@ const templates: Record<SupportTopicKey, TopicTemplate> = {
   },
   bugs: {
     tag: 'bugs',
+    label: 'Bugs & Crashes',
     tags: ['bug', 'crash', 'regression'],
     subjects: [
       'Dashboard crashes when filters are applied',
@@ -78,6 +88,7 @@ const templates: Record<SupportTopicKey, TopicTemplate> = {
   },
   features: {
     tag: 'features',
+    label: 'Feature Requests',
     tags: ['feature-request', 'workflow', 'roadmap'],
     subjects: [
       'Request for saved dashboard filters',
@@ -95,6 +106,7 @@ const templates: Record<SupportTopicKey, TopicTemplate> = {
   },
   performance: {
     tag: 'performance',
+    label: 'Performance',
     tags: ['performance', 'latency', 'slow'],
     subjects: [
       'Reports page loads slowly for large workspace',
@@ -112,6 +124,7 @@ const templates: Record<SupportTopicKey, TopicTemplate> = {
   },
   integrations: {
     tag: 'integrations',
+    label: 'Integrations',
     tags: ['integration', 'webhook', 'api'],
     subjects: [
       'Webhook retries are not firing',
@@ -129,6 +142,7 @@ const templates: Record<SupportTopicKey, TopicTemplate> = {
   },
   notifications: {
     tag: 'notifications',
+    label: 'Notifications',
     tags: ['notifications', 'email', 'alerts'],
     subjects: [
       'Email notifications are delayed',
@@ -146,6 +160,7 @@ const templates: Record<SupportTopicKey, TopicTemplate> = {
   },
   account: {
     tag: 'account',
+    label: 'Account Settings',
     tags: ['account', 'settings', 'users'],
     subjects: [
       'Need to update workspace owner',
@@ -161,35 +176,75 @@ const templates: Record<SupportTopicKey, TopicTemplate> = {
       'Workspace setup is blocked by profile or permission settings.',
     ],
   },
+  compliance: {
+    tag: 'compliance',
+    label: 'Compliance',
+    tags: ['compliance', 'security', 'audit'],
+    subjects: [
+      'Security questionnaire needs completion',
+      'Data retention policy clarification',
+      'Audit log export is missing IP address',
+      'Compliance review for new processor',
+      'Need DPA update for legal review',
+    ],
+    descriptions: [
+      'Customer security team needs documentation before procurement can proceed.',
+      'Legal requested clarification about retention, audit logs, and subprocessors.',
+      'Compliance data must be reviewed before the customer can finish onboarding.',
+      'The account team needs a reliable answer for an enterprise review.',
+    ],
+  },
+  reporting: {
+    tag: 'reporting',
+    label: 'Reporting',
+    tags: ['reporting', 'dashboard', 'analytics'],
+    subjects: [
+      'Usage report has missing rows',
+      'Dashboard totals do not match CSV export',
+      'Need scheduled report for leadership',
+      'Saved report filters are not applied',
+      'Analytics chart shows incorrect date range',
+    ],
+    descriptions: [
+      'Customer relies on the report for weekly internal operations review.',
+      'The dashboard and exported CSV disagree, so the customer cannot trust the numbers.',
+      'Reporting workflow needs better date range and saved filter behavior.',
+      'Leadership report is blocked by inconsistent analytics output.',
+    ],
+  },
 };
 
 const topicKeys = Object.keys(templates) as SupportTopicKey[];
+const statuses: TicketStatus[] = ['New', 'Open', 'Pending', 'Waiting on customer', 'Escalated', 'Solved'];
+const priorities: Priority[] = ['Low', 'Normal', 'High', 'Urgent'];
 
 export function generateMockTopicTickets(): TopicTicket[] {
-  const random = seededRandom(42);
-  const start = startOfDay(daysAgo(83));
+  const random = seededRandom(84);
+  const start = startOfMonth(monthsAgo(5));
+  const end = new Date();
   const tickets: TopicTicket[] = [];
-  let ticketNumber = 7000;
+  let ticketNumber = 9000;
 
-  for (let day = 0; day < 84; day += 1) {
+  for (let day = 0; day <= daysBetween(start, end); day += 1) {
     const date = new Date(start);
     date.setDate(start.getDate() + day);
-    const dailyVolume = 16 + Math.floor(random() * 11) + (day > 45 ? 3 : 0);
+    const monthIndex = monthOffset(start, date);
+    const dailyVolume = 14 + Math.floor(random() * 10) + monthIndex * 2;
 
     for (let index = 0; index < dailyVolume; index += 1) {
-      const topic = pickTopic(day, random);
+      const topic = pickTopic(monthIndex, day, random);
       const template = templates[topic];
-      const subject = pick(template.subjects, random);
-      const description = pick(template.descriptions, random);
       const createdAt = new Date(date);
       createdAt.setHours(Math.floor(random() * 24), Math.floor(random() * 60), 0, 0);
 
       tickets.push({
         id: `TOP-${ticketNumber}`,
-        subject,
-        description,
+        subject: pick(template.subjects, random),
+        description: pick(template.descriptions, random),
         createdAt: createdAt.toISOString(),
         tags: [template.tag, ...template.tags.slice(0, 2)],
+        status: weightedPick(statuses, [0.12, 0.26, 0.16, 0.12, 0.08, 0.26], random),
+        priority: weightedPick(priorities, priorityWeights(topic), random),
         seedTopic: topic,
       });
       ticketNumber += 1;
@@ -199,16 +254,19 @@ export function generateMockTopicTickets(): TopicTicket[] {
   return tickets;
 }
 
-function pickTopic(day: number, random: () => number): SupportTopicKey {
+function pickTopic(monthIndex: number, day: number, random: () => number): SupportTopicKey {
+  const releaseSpike = Math.exp(-Math.pow(monthIndex - 3, 2) / 0.55);
   const weights: Record<SupportTopicKey, number> = {
-    billing: 0.9 + Math.max(0, day - 30) * 0.055,
-    login: Math.max(0.5, 3.2 - day * 0.032),
-    bugs: 0.8 + Math.max(0, day - 45) * 0.085,
-    features: 1.1 + Math.sin(day / 9) * 0.25,
-    performance: 0.9 + Math.max(0, day - 35) * 0.025,
-    integrations: 1.2 + (day > 55 ? 0.65 : 0),
-    notifications: 0.75 + (day > 62 ? 1.1 : 0),
-    account: 1.0,
+    billing: 1.0 + Math.max(0, monthIndex - 3) * 1.65,
+    login: Math.max(0.55, 3.4 - monthIndex * 0.62),
+    bugs: 0.85 + releaseSpike * 4.2,
+    features: 1.0 + monthIndex * 0.22,
+    performance: 0.9 + Math.max(0, monthIndex - 2) * 0.28,
+    integrations: 1.35,
+    notifications: 0.8 + (monthIndex >= 4 ? 0.7 : 0),
+    account: 1.0 + Math.sin(day / 14) * 0.08,
+    compliance: 0.48,
+    reporting: 0.75 + monthIndex * 0.18,
   };
 
   const total = topicKeys.reduce((sum, key) => sum + weights[key], 0);
@@ -222,20 +280,46 @@ function pickTopic(day: number, random: () => number): SupportTopicKey {
   return 'account';
 }
 
+function priorityWeights(topic: SupportTopicKey): number[] {
+  if (topic === 'bugs') return [0.08, 0.34, 0.42, 0.16];
+  if (topic === 'billing' || topic === 'login') return [0.1, 0.46, 0.32, 0.12];
+  if (topic === 'compliance') return [0.18, 0.5, 0.26, 0.06];
+  return [0.2, 0.55, 0.2, 0.05];
+}
+
+function weightedPick<T>(items: T[], weights: number[], random: () => number): T {
+  const total = weights.reduce((sum, weight) => sum + weight, 0);
+  let cursor = random() * total;
+  for (let index = 0; index < items.length; index += 1) {
+    cursor -= weights[index];
+    if (cursor <= 0) return items[index];
+  }
+  return items[items.length - 1];
+}
+
 function pick<T>(items: T[], random: () => number): T {
   return items[Math.floor(random() * items.length)];
 }
 
-function daysAgo(days: number) {
+function monthsAgo(months: number) {
   const date = new Date();
-  date.setDate(date.getDate() - days);
+  date.setMonth(date.getMonth() - months);
   return date;
 }
 
-function startOfDay(date: Date) {
+function startOfMonth(date: Date) {
   const next = new Date(date);
+  next.setDate(1);
   next.setHours(0, 0, 0, 0);
   return next;
+}
+
+function daysBetween(start: Date, end: Date) {
+  return Math.floor((end.getTime() - start.getTime()) / (24 * 60 * 60 * 1000));
+}
+
+function monthOffset(start: Date, date: Date) {
+  return (date.getFullYear() - start.getFullYear()) * 12 + date.getMonth() - start.getMonth();
 }
 
 function seededRandom(seed: number) {
@@ -245,4 +329,3 @@ function seededRandom(seed: number) {
     return (value - 1) / 2147483646;
   };
 }
-
