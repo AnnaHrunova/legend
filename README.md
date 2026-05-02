@@ -62,7 +62,7 @@ Implemented:
 - create ticket flow
 - customers page with customer profile
 - reports dashboard
-- topics analytics heatmap with deterministic embeddings, k-means clustering, time buckets, playback, and drill-down
+- topics heatmap with predefined support topics, project grouping, time buckets, playback, and drill-down
 - admin settings mock
 - contextual feedback buttons across major UI areas
 - analytics events through a centralized wrapper
@@ -74,33 +74,63 @@ Mock data:
 - 8 agents
 - 4 teams: Billing, Technical Support, Compliance, Product Support
 
-## Topics Analytics Prototype
+## Topics Heatmap
 
-The `/analytics/topics` page is a frontend-only analytics experiment.
+The `/analytics/topics` page shows how user support topics evolve over time.
 
-It generates a deterministic dataset of more than 1,000 synthetic support tickets across the last 84 days. Topic distribution changes over time so the heatmap has meaningful trends:
+This is not a click heatmap. It is a support analytics heatmap:
 
-- billing volume increases after the first month
-- bug reports spike later in the period
-- login/auth issues decline over time
-- integrations and notifications have smaller later-stage spikes
+- rows = topics, meaning user-facing problems
+- columns = time, grouped by week or month
+- cell value = number of tickets in that topic and time bucket
 
-The pipeline lives in:
+We use it to understand:
+
+- what users are struggling with
+- which problems are growing
+- which issues are declining
+- which backend services are under stress
+
+This helps product and engineering teams prioritize fixes, detect incidents, guide product decisions, and design backend systems based on real demand rather than assumptions.
+
+The intended analytics pipeline is:
 
 ```text
-src/analytics/topics/
+text -> embeddings -> clustering -> topics -> aggregation -> heatmap
 ```
 
-Pipeline steps:
+In this prototype, the workflow is controlled rather than fully ML-based:
 
-1. Generate mock tickets with realistic subjects, descriptions, dates, and tags.
-2. Compute deterministic hash/keyword embeddings in the browser.
-3. Cluster tickets with k-means.
-4. Label clusters from dominant keywords.
-5. Aggregate topic counts by day or week.
-6. Render a heatmap with timeline playback and cell drill-down.
+- topics are currently predefined
+- tickets are mapped to topics
+- topics are aggregated over time
+- results are visualized as a heatmap
 
-There are no external ML APIs and no backend.
+In the future, embeddings and clustering can be used for automatic topic discovery.
+
+Topics and projects answer different questions:
+
+- Topic = user-facing problem, for example `Payment failed`
+- Project = internal system or service, for example `payments service`
+
+The heatmap can be grouped by:
+
+- topics, which gives a user/problem view
+- projects, which gives an engineering/service ownership view
+
+Timeline animation shows how topics or projects change over time. It helps identify spikes, emerging issues, and problem evolution after releases.
+
+Current limitations:
+
+- clustering is simulated through predefined topics
+- topic labeling is simplified
+- all data is mock-based
+
+This is a prototype for validation, not production analytics.
+
+Reference: [Document Clustering With LLM Embeddings in Scikit-Learn](https://machinelearningmastery.com/document-clustering-with-llm-embeddings-in-scikit-learn/)
+
+This article explains how text can be converted into embeddings and grouped into topics using clustering algorithms.
 
 ## Analytics Architecture
 
