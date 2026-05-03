@@ -167,6 +167,19 @@ const templates: Record<string, TicketTemplate> = {
       'Compliance review is blocking account activation.',
     ],
   },
+  'app-crashes': {
+    subjects: [
+      'App crashes on startup',
+      'App crashes when I try to pay',
+      'Mobile app closes after latest update',
+      'Crash during transaction confirmation',
+    ],
+    descriptions: [
+      'Customer reports the mobile app closes unexpectedly after the latest release.',
+      'Crash happens during payment confirmation and blocks the customer from completing the flow.',
+      'The app opens briefly, freezes, and then exits without showing an error.',
+    ],
+  },
   'app-performance': {
     subjects: [
       'App loads very slowly',
@@ -290,7 +303,7 @@ export function generateTopicAnalyticsTickets(): TopicAnalyticsTicket[] {
 }
 
 function pickSource(topicId: string, monthIndex: number, day: number, random: () => number): TicketSource {
-  const reviewHeavyTopics = ['app-performance', 'payment-failed', 'card-declined', 'push-notifications', 'login-issues', 'esim-refund'];
+  const reviewHeavyTopics = ['app-crashes', 'app-performance', 'payment-failed', 'card-declined', 'push-notifications', 'login-issues', 'esim-refund'];
   const releaseSpike = Math.exp(-Math.pow(day - 122, 2) / 130);
   const notificationSpike = topicId === 'push-notifications' && Math.sin(day / 9) > 0.82 ? 0.18 : 0;
   const laterRefundPressure = topicId === 'esim-refund' ? Math.max(0, monthIndex - 3) * 0.04 : 0;
@@ -300,7 +313,7 @@ function pickSource(topicId: string, monthIndex: number, day: number, random: ()
 }
 
 function pickReviewSource(topicId: string, random: () => number): ReviewSource {
-  const androidHeavy = ['app-performance', 'push-notifications', 'payment-failed'];
+  const androidHeavy = ['app-crashes', 'app-performance', 'push-notifications', 'payment-failed'];
   const googlePlayProbability = androidHeavy.includes(topicId) ? 0.58 : 0.48;
   return random() < googlePlayProbability ? 'google_play' : 'app_store';
 }
@@ -310,7 +323,7 @@ function platformForReviewSource(reviewSource: ReviewSource): ReviewPlatform {
 }
 
 function pickRating(topicId: string, random: () => number): ReviewRating {
-  if (['payment-failed', 'card-declined', 'app-performance', 'login-issues', 'account-locked'].includes(topicId)) {
+  if (['payment-failed', 'card-declined', 'app-crashes', 'app-performance', 'login-issues', 'account-locked'].includes(topicId)) {
     return weightedPick([1, 2, 3, 4, 5] as ReviewRating[], [0.32, 0.34, 0.2, 0.1, 0.04], random);
   }
 
@@ -333,6 +346,7 @@ function priorityFromRating(rating: ReviewRating): Priority {
 
 function reviewSubject(topicId: string, template: TicketTemplate, random: () => number) {
   const overrides: Record<string, string[]> = {
+    'app-crashes': ['App crashes when I try to pay', 'App keeps closing after update'],
     'app-performance': ['App crashes when I try to pay', 'App freezes on the transactions screen'],
     'payment-failed': ['Payment fails every time after confirmation', 'Money reserved but payment failed'],
     'esim-refund': ['Refund not received for unused eSIM', 'Still waiting for eSIM refund'],
@@ -379,6 +393,7 @@ function pickTopic(monthIndex: number, day: number, random: () => number) {
     'account-locked': 0.82 + Math.sin(day / 17) * 0.12,
     'transaction-missing': 0.72 + paymentIncident * 1.15 + monthIndex * 0.1,
     'verification-stuck': 0.48,
+    'app-crashes': 0.52 + paymentIncident * 3.6 + Math.max(0, monthIndex - 3) * 0.18,
     'app-performance': 0.68 + Math.max(0, monthIndex - 2) * 0.18,
     'card-delivery': 0.56 + Math.sin(day / 18) * 0.1,
     'direct-debit': 0.54 + Math.max(0, monthIndex - 3) * 0.18,
@@ -398,7 +413,7 @@ function pickTopic(monthIndex: number, day: number, random: () => number) {
 }
 
 function priorityWeights(topicId: string): number[] {
-  if (['payment-failed', 'card-declined', 'account-locked'].includes(topicId)) {
+  if (['payment-failed', 'card-declined', 'app-crashes', 'account-locked'].includes(topicId)) {
     return [0.06, 0.34, 0.42, 0.18];
   }
 

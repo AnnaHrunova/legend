@@ -16,6 +16,7 @@ type TopicsHeatmapProps = {
   activeBucketIndex: number;
   granularity: TimeGranularity;
   groupingMode: TopicGroupingMode;
+  filterLabel?: string;
   selected?: { rowId: string; timeBucket: string };
   onSelect: (rowId: string, timeBucket: string) => void;
   onRowSelect?: (rowId: string) => void;
@@ -29,6 +30,7 @@ export function TopicsHeatmap({
   activeBucketIndex,
   granularity,
   groupingMode,
+  filterLabel,
   selected,
   onSelect,
   onRowSelect,
@@ -60,6 +62,7 @@ export function TopicsHeatmap({
             maxCount={maxCount}
             activeBucketIndex={activeBucketIndex}
             granularity={granularity}
+            filterLabel={filterLabel}
             selected={selected}
             onSelect={onSelect}
             onRowSelect={onRowSelect}
@@ -77,6 +80,7 @@ function HeatmapRowView({
   maxCount,
   activeBucketIndex,
   granularity,
+  filterLabel,
   selected,
   onSelect,
   onRowSelect,
@@ -87,6 +91,7 @@ function HeatmapRowView({
   maxCount: number;
   activeBucketIndex: number;
   granularity: TimeGranularity;
+  filterLabel?: string;
   selected?: { rowId: string; timeBucket: string };
   onSelect: (rowId: string, timeBucket: string) => void;
   onRowSelect?: (rowId: string) => void;
@@ -126,7 +131,7 @@ function HeatmapRowView({
               isFuture ? 'future' : ''
             }`}
             style={{ background: colorFor(intensity) }}
-            title={tooltipFor(row, bucket, granularity, count, growth, cell)}
+            title={tooltipFor(row, bucket, granularity, count, growth, cell, filterLabel)}
             onClick={() => onSelect(row.id, bucket)}
           >
             <span>{count}</span>
@@ -150,37 +155,29 @@ function tooltipFor(
   count: number,
   growth: number,
   cell?: HeatmapCell,
+  filterLabel?: string,
 ) {
   const label = rowKindLabel(row.kind);
   const topTopics = cell?.topTopics.length
     ? `\nTop topics:\n${cell.topTopics.map((topic) => `- ${topic.name} (${topic.count})`).join('\n')}`
     : '';
+  const scope = filterLabel ? `\nFilter: ${filterLabel}` : '';
 
-  return `${label}: ${row.name}\n${granularity === 'month' ? 'Month' : 'Week'}: ${formatBucket(bucket, granularity)}\nTickets: ${count}\nGrowth: ${formatGrowth(growth)} vs previous${topTopics}`;
+  return `${label}: ${row.name}\n${granularity === 'month' ? 'Month' : 'Week'}: ${formatBucket(bucket, granularity)}\nTickets: ${count}\nGrowth: ${formatGrowth(growth)} vs previous${scope}${topTopics}`;
 }
 
 function groupingLabel(groupingMode: TopicGroupingMode) {
   if (groupingMode === 'project') return 'Project';
-  if (groupingMode === 'source') return 'Source';
-  if (groupingMode === 'severity') return 'Severity';
   return 'Topic';
 }
 
 function rowKindLabel(kind: HeatmapRow['kind']) {
   if (kind === 'project') return 'Project';
-  if (kind === 'source') return 'Source';
-  if (kind === 'severity') return 'Severity';
   return 'Topic';
 }
 
 function rowSubtitle(row: HeatmapRow) {
   if (row.kind === 'project') return `${row.topicIds.length} linked topics`;
-  if (row.kind === 'source') {
-    if (row.source === 'google_play') return 'Android ratings and public reviews';
-    if (row.source === 'app_store') return 'iOS ratings and public reviews';
-    return 'Agent-managed support tickets';
-  }
-  if (row.kind === 'severity') return 'Derived from app store rating';
   return row.projectIds.join(', ');
 }
 

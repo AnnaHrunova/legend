@@ -164,6 +164,8 @@ This is a frontend prototype.
 - avoid feature overload
 - remove instead of adding
 - do not reintroduce a separate platform dropdown unless explicitly requested
+- do not turn Topics Heatmap into a generic KPI/Grafana dashboard
+- keep the heatmap as the primary artifact; avoid executive summary widgets unless explicitly requested
 
 ---
 

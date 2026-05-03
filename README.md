@@ -76,13 +76,13 @@ Mock data:
 
 ## Topics Heatmap
 
-The `/analytics/topics` page shows how user support topics evolve over time.
+The `/analytics/topics` page is the primary analytics visualization. It shows how user support topics evolve over time across support tickets, Google Play reviews, App Store reviews, projects, and severity.
 
 This is not a click heatmap. It is a support analytics heatmap:
 
-- rows = topics, meaning user-facing problems
+- rows = topics or projects
 - columns = time, grouped by week or month
-- cell value = number of tickets in that topic and time bucket
+- cell value = number of tickets/reviews in that row and time bucket
 
 We use it to understand:
 
@@ -118,7 +118,16 @@ The heatmap can be grouped by:
 - topics, which gives a user/problem view
 - projects, which gives an engineering/service ownership view
 
-Timeline animation shows how topics or projects change over time. It helps identify spikes, emerging issues, and problem evolution after releases.
+Filters can scope the heatmap by:
+
+- source: all data, support tickets, Google Play reviews, or App Store reviews
+- severity: critical, medium, or low
+- focus: one topic or one project
+- time range and granularity
+
+Timeline playback shows how topics or projects change over time. It highlights the current bucket while keeping earlier buckets visible, so users can inspect spikes, emerging issues, and problem evolution after releases.
+
+This page is intentionally not a general KPI dashboard. Avoid adding executive summary cards, health-score widgets, or Grafana-style panels unless explicitly requested. The heatmap is the product artifact being validated.
 
 Current limitations:
 
@@ -134,13 +143,12 @@ This article explains how text can be converted into embeddings and grouped into
 
 ## Analytics Filter UX
 
-Topics and Platform Health use one shared filter model through `src/components/analytics/AnalyticsFilterPanel.tsx`.
+Topics Heatmap uses one filter model through `src/components/analytics/AnalyticsFilterPanel.tsx`.
 
 Source is the single source of truth:
 
 - `All data` includes support tickets, Google Play reviews, and App Store reviews
 - `Support tickets` scopes analytics to support tickets only
-- `Reviews` includes Google Play and App Store reviews
 - `Google Play reviews` implies Android
 - `App Store reviews` implies iOS
 
@@ -148,12 +156,11 @@ There is intentionally no separate platform dropdown. Platform is derived from s
 
 Filters use progressive disclosure:
 
-- primary controls are source, severity, date range, and granularity
+- primary controls are source, group by, severity, time range, and granularity
 - contextual controls appear only when needed
-- advanced sorting controls stay collapsed by default
 - active chips summarize state but are not the main control surface
 
-Focus mode scopes the heatmap, playback, details panel, and summaries to one analysis target:
+Focus mode scopes the heatmap, playback, and drill-down panel to one analysis target:
 
 - `All topics and projects`
 - `One project`

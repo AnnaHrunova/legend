@@ -1,7 +1,6 @@
 import {
   BarChart3,
   Flame,
-  HeartPulse,
   Inbox,
   LayoutDashboard,
   Plus,
@@ -20,8 +19,7 @@ const navItems = [
   { label: 'Inbox', to: '/views/my-tickets', icon: Inbox },
   { label: 'Customers', to: '/customers', icon: UsersRound },
   { label: 'Reports', to: '/reports', icon: BarChart3 },
-  { label: 'Topics', to: '/analytics/topics', icon: Flame },
-  { label: 'Platform Health', to: '/analytics/platform-health', icon: HeartPulse },
+  { label: 'Topics Heatmap', to: '/analytics/topics', icon: Flame },
   { label: 'Admin', to: '/admin', icon: Settings },
 ];
 

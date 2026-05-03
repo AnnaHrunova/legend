@@ -1757,6 +1757,10 @@ textarea:focus {
   align-items: start;
 }
 
+.topics-dashboard-grid.focused {
+  grid-template-columns: minmax(0, 1fr) 340px;
+}
+
 .topics-heatmap-card,
 .topics-detail-card,
 .topic-movement-card {
@@ -1766,6 +1770,10 @@ textarea:focus {
 .topics-detail-card {
   position: sticky;
   top: 92px;
+}
+
+.topics-detail-card.compact-drilldown {
+  padding: 16px;
 }
 
 .topics-card-header {
@@ -2048,6 +2056,10 @@ textarea:focus {
   margin-bottom: 0;
 }
 
+.topics-timeline-row.compact {
+  margin: 16px 0 0;
+}
+
 .topics-heatmap.refined {
   gap: 5px;
   min-width: 960px;
@@ -2143,6 +2155,10 @@ textarea:focus {
   font-weight: 800;
 }
 
+.heatmap-empty-state {
+  margin-top: 14px;
+}
+
 .heatmap-legend.refined i {
   width: 120px;
   height: 10px;
@@ -2155,6 +2171,44 @@ textarea:focus {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
   margin-bottom: 12px;
+}
+
+.compact-drilldown-stats {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 14px;
+}
+
+.compact-drilldown-stats div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.compact-drilldown-stats dt {
+  color: #66758a;
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.compact-drilldown-stats dd {
+  margin: 0;
+  color: #172033;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.compact-drilldown-stats dd.up {
+  color: #0f766e;
+}
+
+.compact-drilldown-stats dd.down {
+  color: #b45309;
 }
 
 .topic-metric {

@@ -1,17 +1,14 @@
 import { projects, topics, type Project, type Topic } from './domain';
-import { severityFromRating, type AnalyticsTicketSource, type ReviewSeverity } from '../../domain/types';
 import type { TopicAnalyticsTicket } from './mockData';
 
 export type TimeGranularity = 'week' | 'month';
-export type TopicGroupingMode = 'topic' | 'project' | 'source' | 'severity';
-export type HeatmapRowKind = 'topic' | 'project' | 'source' | 'severity';
+export type TopicGroupingMode = 'topic' | 'project';
+export type HeatmapRowKind = 'topic' | 'project';
 
 export type HeatmapRow = {
   id: string;
   name: string;
   kind: HeatmapRowKind;
-  source?: AnalyticsTicketSource;
-  severity?: ReviewSeverity;
   projectIds: string[];
   topicIds: string[];
   keywords: string[];
@@ -116,8 +113,6 @@ export function relatedProjects(row: HeatmapRow) {
 
 function rowsForGrouping(groupingMode: TopicGroupingMode): HeatmapRow[] {
   if (groupingMode === 'project') return projectRows(projects, topics);
-  if (groupingMode === 'source') return sourceRows();
-  if (groupingMode === 'severity') return severityRows();
   return topicRows(topics);
 }
 
@@ -130,70 +125,6 @@ function topicRows(items: Topic[]): HeatmapRow[] {
     topicIds: [topic.id],
     keywords: topic.keywords,
   }));
-}
-
-function sourceRows(): HeatmapRow[] {
-  return [
-    {
-      id: 'support',
-      name: 'Support tickets',
-      kind: 'source',
-      source: 'support',
-      projectIds: [],
-      topicIds: topics.map((topic) => topic.id),
-      keywords: ['support', 'agent', 'inbox', 'customer'],
-    },
-    {
-      id: 'google_play',
-      name: 'Google Play reviews',
-      kind: 'source',
-      source: 'google_play',
-      projectIds: [],
-      topicIds: topics.map((topic) => topic.id),
-      keywords: ['reviews', 'rating', 'android', 'google play'],
-    },
-    {
-      id: 'app_store',
-      name: 'App Store reviews',
-      kind: 'source',
-      source: 'app_store',
-      projectIds: [],
-      topicIds: topics.map((topic) => topic.id),
-      keywords: ['reviews', 'rating', 'ios', 'app store'],
-    },
-  ];
-}
-
-function severityRows(): HeatmapRow[] {
-  return [
-    {
-      id: 'critical',
-      name: 'Critical reviews',
-      kind: 'severity',
-      severity: 'critical',
-      projectIds: [],
-      topicIds: topics.map((topic) => topic.id),
-      keywords: ['1 star', '2 star', 'blocked', 'urgent'],
-    },
-    {
-      id: 'medium',
-      name: 'Medium reviews',
-      kind: 'severity',
-      severity: 'medium',
-      projectIds: [],
-      topicIds: topics.map((topic) => topic.id),
-      keywords: ['3 star', 'partial', 'inconsistent'],
-    },
-    {
-      id: 'low',
-      name: 'Low severity reviews',
-      kind: 'severity',
-      severity: 'low',
-      projectIds: [],
-      topicIds: topics.map((topic) => topic.id),
-      keywords: ['4 star', '5 star', 'minor', 'request'],
-    },
-  ];
 }
 
 function projectRows(projectItems: Project[], topicItems: Topic[]): HeatmapRow[] {
@@ -212,17 +143,7 @@ function projectRows(projectItems: Project[], topicItems: Topic[]): HeatmapRow[]
 
 function matchesRow(ticket: TopicAnalyticsTicket, row: HeatmapRow) {
   if (row.kind === 'topic') return ticket.topicId === row.id;
-  if (row.kind === 'project') return ticket.projectIds.some((projectId) => projectId === row.id);
-  if (row.kind === 'source') return row.source === 'support' ? ticket.source === 'support' : ticket.reviewSource === row.source;
-  return topicTicketSeverity(ticket) === row.severity;
-}
-
-function topicTicketSeverity(ticket: TopicAnalyticsTicket): ReviewSeverity {
-  const reviewSeverity = severityFromRating(ticket.rating);
-  if (reviewSeverity) return reviewSeverity;
-  if (ticket.priority === 'Urgent' || ticket.priority === 'High') return 'critical';
-  if (ticket.priority === 'Normal') return 'medium';
-  return 'low';
+  return ticket.projectIds.some((projectId) => projectId === row.id);
 }
 
 function topicBreakdown(tickets: TopicAnalyticsTicket[]) {

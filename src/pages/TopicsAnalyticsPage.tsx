@@ -1,18 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowDownRight, ArrowUpRight } from 'lucide-react';
 import { track } from '../analytics/analytics';
 import {
   aggregateTopics,
-  bucketFor,
   filterTicketsForRow,
   getCell,
   getCellCount,
   growthBetween,
   relatedProjects,
-  type HeatmapCell,
   type HeatmapRow,
   type TimeGranularity,
-  type TopicGroupingMode,
 } from '../analytics/topics/aggregation';
 import { projects, topics } from '../analytics/topics/domain';
 import { generateTopicAnalyticsTickets, type TopicAnalyticsTicket } from '../analytics/topics/mockData';
@@ -32,11 +28,11 @@ import {
 
 const defaultTopicFilters: AnalyticsFilterState = {
   source: 'all',
+  groupBy: 'topic',
   severity: 'all',
   dateRange: '90d',
   granularity: 'week',
   focusMode: 'all',
-  sortBy: 'total_volume',
 };
 
 type SelectedCell = {
@@ -44,22 +40,14 @@ type SelectedCell = {
   timeBucket: string;
 };
 
-type RowMovement = {
-  row: HeatmapRow;
-  growth: number;
-  current: number;
-  previous: number;
-};
-
 export function TopicsAnalyticsPage() {
   const [filters, setFilters] = useState<AnalyticsFilterState>(defaultTopicFilters);
-  const [groupingMode, setGroupingMode] = useState<TopicGroupingMode>('topic');
   const [activeBucketIndex, setActiveBucketIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [selectedCell, setSelectedCell] = useState<SelectedCell | undefined>();
 
   useEffect(() => {
-    track('topics_page_opened', { defaultGrouping: 'topic' });
+    track('topics_page_opened');
   }, []);
 
   const allTickets = useMemo(() => generateTopicAnalyticsTickets(), []);
@@ -72,57 +60,35 @@ export function TopicsAnalyticsPage() {
     [filters, rangeTickets],
   );
   const aggregation = useMemo(
-    () => aggregateTopics(filteredTickets, filters.granularity, groupingMode),
-    [filteredTickets, filters.granularity, groupingMode],
+    () => aggregateTopics(filteredTickets, filters.granularity, filters.groupBy),
+    [filteredTickets, filters.granularity, filters.groupBy],
   );
 
   const activeBucket = aggregation.buckets[activeBucketIndex] ?? aggregation.buckets[0];
-
-  const sortedRows = useMemo(() => {
-    const rows = [...aggregation.rows];
-    if (filters.sortBy === 'alphabetical') {
-      return rows.sort((a, b) => a.name.localeCompare(b.name));
-    }
-    if (filters.sortBy === 'growth_rate') {
-      return rows.sort((a, b) => rollingGrowth(b.id, aggregation.cells, aggregation.buckets, activeBucketIndex) - rollingGrowth(a.id, aggregation.cells, aggregation.buckets, activeBucketIndex));
-    }
-    if (filters.sortBy === 'critical_count') {
-      return rows.sort((a, b) => criticalForTopicRow(b, filteredTickets) - criticalForTopicRow(a, filteredTickets));
-    }
-    return rows.sort((a, b) => totalForRow(b.id, aggregation.cells, aggregation.buckets, activeBucketIndex) - totalForRow(a.id, aggregation.cells, aggregation.buckets, activeBucketIndex));
-  }, [activeBucketIndex, aggregation.buckets, aggregation.cells, aggregation.rows, filteredTickets, filters.sortBy]);
-
-  const movement = useMemo(
-    () => rowMovements(aggregation.rows, aggregation.cells, aggregation.buckets, activeBucketIndex),
+  const visibleRows = useMemo(
+    () => sortRowsForHeatmap(aggregation.rows, aggregation.cells, aggregation.buckets, activeBucketIndex),
     [activeBucketIndex, aggregation.buckets, aggregation.cells, aggregation.rows],
   );
-  const emergingRows = movement.filter((item) => item.current > 0).sort((a, b) => b.growth - a.growth).slice(0, 4);
-  const decliningRows = movement.filter((item) => item.previous > 0).sort((a, b) => a.growth - b.growth).slice(0, 4);
-
   const selectedRow = selectedCell
     ? aggregation.rows.find((row) => row.id === selectedCell.rowId)
-    : sortedRows[0];
+    : visibleRows[0];
   const selectedBucket = selectedCell?.timeBucket ?? activeBucket;
+  const selectedCount = selectedRow && selectedBucket ? getCellCount(aggregation.cells, selectedRow.id, selectedBucket) : 0;
+  const previousCount = selectedRow && selectedBucket
+    ? previousCellCount(aggregation.buckets, aggregation.cells, selectedRow.id, selectedBucket)
+    : 0;
+  const selectedGrowth = growthBetween(selectedCount, previousCount);
   const selectedTickets = selectedRow && selectedBucket
     ? filterTicketsForRow(filteredTickets, selectedRow, selectedBucket, filters.granularity)
     : [];
-  const selectedCellData = selectedRow && selectedBucket
-    ? getCell(aggregation.cells, selectedRow.id, selectedBucket)
-    : undefined;
-  const selectedStats = selectedRow
-    ? getRowDetails(selectedRow.id, aggregation.cells, aggregation.buckets, activeBucketIndex)
-    : undefined;
-
-  const visibleTickets = useMemo(
-    () => ticketsThroughActiveBucket(filteredTickets, activeBucket, filters.granularity),
-    [activeBucket, filteredTickets, filters.granularity],
-  );
+  const selectedCellData = selectedRow && selectedBucket ? getCell(aggregation.cells, selectedRow.id, selectedBucket) : undefined;
+  const filterLabel = sourceFilterLabel(filters.source);
 
   useEffect(() => {
     setActiveBucketIndex(Math.max(0, aggregation.buckets.length - 1));
     setSelectedCell(undefined);
     setIsPlaying(false);
-  }, [aggregation.buckets.length, filters, groupingMode]);
+  }, [aggregation.buckets.length, filters]);
 
   useEffect(() => {
     if (!isPlaying || !aggregation.buckets.length) return;
@@ -134,91 +100,81 @@ export function TopicsAnalyticsPage() {
           return current;
         }
         const next = current + 1;
-        track('topics_time_step_changed', { timeBucket: aggregation.buckets[next] });
+        track('topics_time_step_changed', {
+          timeBucket: aggregation.buckets[next],
+          ...analyticsFilterProperties(filters),
+        });
         return next;
       });
     }, 950);
 
     return () => window.clearInterval(timer);
-  }, [aggregation.buckets, aggregation.buckets.length, isPlaying]);
+  }, [aggregation.buckets, aggregation.buckets.length, filters, isPlaying]);
 
-  const handleGroupingChange = (next: TopicGroupingMode) => {
-    if (next === groupingMode) return;
-    const previous = groupingMode;
-    setGroupingMode(next);
-    track('topics_grouping_changed', {
-      from: previous,
-      to: next,
-    });
-  };
+  function handleFilterChange(next: AnalyticsFilterState) {
+    setFilters(next);
+    setSelectedCell(undefined);
+  }
 
-  const handlePlayPause = () => {
+  function handlePlayPause() {
     setIsPlaying((current) => {
       const next = !current;
       if (next && activeBucketIndex >= aggregation.buckets.length - 1) {
         setActiveBucketIndex(0);
       }
-      track(next ? 'topics_play_started' : 'topics_play_paused');
+      track(next ? 'topics_play_started' : 'topics_play_paused', analyticsFilterProperties(filters));
       return next;
     });
-  };
+  }
 
-  const selectBucket = (index: number) => {
+  function selectBucket(index: number) {
     const nextIndex = Math.max(0, Math.min(index, aggregation.buckets.length - 1));
     const nextBucket = aggregation.buckets[nextIndex];
     setActiveBucketIndex(nextIndex);
     setIsPlaying(false);
     if (nextBucket) {
-      track('topics_time_step_changed', { timeBucket: nextBucket });
+      track('topics_time_step_changed', {
+        timeBucket: nextBucket,
+        ...analyticsFilterProperties(filters),
+      });
     }
-  };
+  }
 
-  const handleCellSelect = (rowId: string, timeBucket: string) => {
+  function handleCellSelect(rowId: string, timeBucket: string) {
     const row = aggregation.rows.find((item) => item.id === rowId);
     const count = getCellCount(aggregation.cells, rowId, timeBucket);
-    const identity = analyticsRowIdentity(row);
     setSelectedCell({ rowId, timeBucket });
     track('topics_cell_selected', {
-      mode: row?.kind ?? groupingMode,
-      ...identity,
+      groupBy: filters.groupBy,
+      rowId,
+      rowLabel: row?.name ?? rowId,
+      timeBucket,
+      count,
+      source: filters.source,
+      focusMode: filters.focusMode,
+      ...(filters.focusId ? { focusId: filters.focusId } : {}),
+    });
+    track('topics_drilldown_opened', {
+      groupBy: filters.groupBy,
+      rowId,
       timeBucket,
       count,
     });
-    track('topics_drilldown_opened', {
-      mode: row?.kind ?? groupingMode,
-      ...identity,
-    });
-  };
+  }
 
-  const handleRowSelect = (rowId: string) => {
-    const row = aggregation.rows.find((item) => item.id === rowId);
-    setSelectedCell({ rowId, timeBucket: activeBucket });
-    if (row?.kind === 'project') {
-      track('topics_project_selected', { projectId: row.id });
-      return;
-    }
-    if (row?.kind === 'source' || row?.kind === 'severity') {
-      return;
-    }
-    track('topics_topic_selected', { topicId: row?.id ?? rowId });
-  };
-
-  const fastestGrowing = emergingRows[0];
-  const biggestDecline = decliningRows[0];
-  const feedbackTopicId = selectedRow?.kind === 'topic' ? selectedRow.id : undefined;
-  const feedbackProjectId = selectedRow?.kind === 'project' ? selectedRow.id : undefined;
-  const feedbackSource = selectedRow?.kind === 'source' ? selectedRow.source : undefined;
-  const feedbackSeverity = selectedRow?.kind === 'severity' ? selectedRow.severity : undefined;
+  function handleRowSelect(rowId: string) {
+    if (!activeBucket) return;
+    handleCellSelect(rowId, activeBucket);
+  }
 
   return (
-    <section className="page-stack topics-dashboard">
+    <section className="page-stack topics-dashboard focused-topics-page">
       <div className="topics-dashboard-header">
         <div>
           <p className="eyebrow">Analytics</p>
-          <h1>Topics</h1>
-          <p className="view-description">See which payment-app issues users report and which internal services are under stress.</p>
+          <h1>Topics Heatmap</h1>
+          <p className="view-description">Track how support topics change over time across projects and platforms.</p>
         </div>
-        <FeedbackButton context="reports_dashboard" variant="inline" componentLabel="Topics analytics" />
       </div>
 
       <AnalyticsFilterPanel
@@ -226,70 +182,62 @@ export function TopicsAnalyticsPage() {
         defaultValue={defaultTopicFilters}
         projectOptions={projects.map((project) => ({ id: project.id, name: project.name }))}
         topicOptions={topics.map((topic) => ({ id: topic.id, name: topic.name }))}
-        helperText="Source controls marketplace context. Google Play implies Android, App Store implies iOS."
-        onChange={(next) => {
-          setFilters(next);
-          setSelectedCell(undefined);
-        }}
+        onChange={handleFilterChange}
       />
 
-      <section className="topics-kpi-grid">
-        <SummaryCard label="Total tickets analyzed" value={visibleTickets.length.toLocaleString()} detail={dateRangeLabel(filters.dateRange)} />
-        <SummaryCard label="Mapped topics" value={topics.length} detail={`${projects.length} internal services`} />
-        <SummaryCard
-          label={`Fastest growing ${groupingLabel(groupingMode).toLowerCase()}`}
-          value={fastestGrowing?.row.name ?? 'No trend'}
-          detail={fastestGrowing ? `${formatGrowth(fastestGrowing.growth)} · ${fastestGrowing.current} current` : 'Not enough data'}
-          tone="up"
-        />
-        <SummaryCard
-          label={`Biggest declining ${groupingLabel(groupingMode).toLowerCase()}`}
-          value={biggestDecline?.row.name ?? 'No decline'}
-          detail={biggestDecline ? `${formatGrowth(biggestDecline.growth)} · ${biggestDecline.current} current` : 'Not enough data'}
-          tone="down"
-        />
-      </section>
-
-      <section className="topics-dashboard-grid">
+      <section className="topics-dashboard-grid focused">
         <div className="topics-heatmap-card">
           <div className="topics-card-header">
             <div>
-              <h2>Topics Heatmap</h2>
-              <p>
-                {heatmapDescription(groupingMode)}
-              </p>
+              <h2>Heatmap</h2>
+              <p>{heatmapDescription(filters)}</p>
             </div>
             <FeedbackButton
               context="topics_heatmap"
               variant="icon"
               componentLabel="Topics heatmap"
-              topicId={feedbackTopicId}
-              projectId={feedbackProjectId}
-              source={feedbackSource}
-              severity={feedbackSeverity}
+              source={filters.source}
+              groupBy={filters.groupBy}
+              severity={filters.severity}
+              focusMode={filters.focusMode}
+              focusId={filters.focusId}
               timeBucket={selectedBucket}
             />
-            <div className="topics-card-controls">
-              <label className="compact-label topics-sort-label">
-                <span>Group by</span>
-                <select value={groupingMode} onChange={(event) => handleGroupingChange(event.target.value as TopicGroupingMode)}>
-                  <option value="topic">Topics</option>
-                  <option value="project">Projects</option>
-                  <option value="source">Source</option>
-                  <option value="severity">Severity</option>
-                </select>
-              </label>
-              <FeedbackButton
-                context="topics_grouping_control"
-                variant="icon"
-                componentLabel="Topics grouping control"
-                source={feedbackSource}
-                severity={feedbackSeverity}
-              />
-            </div>
           </div>
 
-          <div className="topics-timeline-row">
+          <TopicsHeatmap
+            rows={visibleRows}
+            buckets={aggregation.buckets}
+            cells={aggregation.cells}
+            maxCount={aggregation.maxCount}
+            activeBucketIndex={activeBucketIndex}
+            granularity={filters.granularity}
+            groupingMode={filters.groupBy}
+            filterLabel={filterLabel}
+            selected={selectedCell}
+            onSelect={handleCellSelect}
+            onRowSelect={handleRowSelect}
+          />
+
+          <div className="heatmap-footer">
+            <div className="heatmap-legend refined">
+              <span>Low</span>
+              <i />
+              <strong>High</strong>
+            </div>
+            <span>
+              {filteredTickets.length.toLocaleString()} matching items · {activeBucket ? formatBucketLabel(activeBucket, filters.granularity) : 'No period selected'}
+            </span>
+          </div>
+
+          {aggregation.buckets.length === 0 && (
+            <div className="empty-state heatmap-empty-state">
+              <strong>No matching tickets</strong>
+              <span>Try a wider time range or remove severity/focus filters.</span>
+            </div>
+          )}
+
+          <div className="topics-timeline-row compact">
             <TimelineControls
               buckets={aggregation.buckets}
               activeIndex={activeBucketIndex}
@@ -303,93 +251,80 @@ export function TopicsAnalyticsPage() {
               context="topics_timeline"
               variant="icon"
               componentLabel="Topics timeline"
+              source={filters.source}
+              groupBy={filters.groupBy}
+              focusMode={filters.focusMode}
+              focusId={filters.focusId}
               timeBucket={activeBucket}
-              source={feedbackSource}
-              severity={feedbackSeverity}
             />
-          </div>
-
-          <TopicsHeatmap
-            rows={sortedRows}
-            buckets={aggregation.buckets}
-            cells={aggregation.cells}
-            maxCount={aggregation.maxCount}
-            activeBucketIndex={activeBucketIndex}
-            granularity={filters.granularity}
-            groupingMode={groupingMode}
-            selected={selectedCell}
-            onSelect={handleCellSelect}
-            onRowSelect={handleRowSelect}
-          />
-
-          <div className="heatmap-footer">
-            <div className="heatmap-legend refined">
-              <span>Low</span>
-              <i />
-              <strong>High</strong>
-            </div>
-            <span>{activeBucket ? formatBucketLabel(activeBucket, filters.granularity) : 'No period selected'}</span>
           </div>
         </div>
 
-        <aside className="topics-detail-card">
+        <aside className="topics-detail-card compact-drilldown">
           <div className="topics-card-header compact">
             <div>
-              <p className="eyebrow">{selectedRow ? `Selected ${selectedRow.kind}` : 'Selection'}</p>
-              <h2>{selectedRow?.name ?? 'No selection'}</h2>
+              <p className="eyebrow">Drill-down</p>
+              <h2>{selectedRow?.name ?? 'Select a cell'}</h2>
             </div>
             <FeedbackButton
-              context="topics_details_panel"
+              context="topics_drilldown_panel"
               variant="icon"
-              componentLabel="Topics details panel"
-              topicId={feedbackTopicId}
-              projectId={feedbackProjectId}
-              source={feedbackSource}
-              severity={feedbackSeverity}
+              componentLabel="Topics drill-down panel"
+              source={filters.source}
+              groupBy={filters.groupBy}
+              severity={filters.severity}
+              focusMode={filters.focusMode}
+              focusId={filters.focusId}
               timeBucket={selectedBucket}
             />
           </div>
 
-          {selectedRow && selectedStats ? (
+          {selectedRow && selectedBucket ? (
             <>
-              <div className="topic-detail-stats">
-                <Metric label="Tickets" value={selectedStats.total.toLocaleString()} />
-                <Metric label="Growth" value={formatGrowth(selectedStats.growth)} tone={selectedStats.growth >= 0 ? 'up' : 'down'} />
-              </div>
-              <p className="topic-trend-summary">
-                {trendSummary(selectedRow.name, selectedRow.kind, selectedStats.growth, filters.granularity)}
-              </p>
-
-              <section className="topic-keywords">
-                <h3>{selectedRow.kind === 'project' || selectedRow.kind === 'source' || selectedRow.kind === 'severity' ? 'Top topics' : 'Mapped services'}</h3>
+              <dl className="compact-drilldown-stats">
                 <div>
-                  {selectedRow.kind === 'project' || selectedRow.kind === 'source' || selectedRow.kind === 'severity'
-                    ? selectedCellData?.topTopics.map((topic) => <span key={topic.topicId}>{topic.name}</span>)
-                    : relatedProjects(selectedRow).map((project) => <span key={project.id}>{project.name}</span>)}
+                  <dt>Period</dt>
+                  <dd>{formatBucketLabel(selectedBucket, filters.granularity)}</dd>
                 </div>
-              </section>
-
-              <section className="topic-keywords">
-                <h3>Keyword hints</h3>
                 <div>
-                  {selectedRow.keywords.slice(0, 7).map((keyword) => (
-                    <span key={keyword}>{keyword}</span>
-                  ))}
+                  <dt>Count</dt>
+                  <dd>{selectedCount}</dd>
                 </div>
-              </section>
+                <div>
+                  <dt>Growth</dt>
+                  <dd className={selectedGrowth >= 0 ? 'up' : 'down'}>{formatGrowth(selectedGrowth)}</dd>
+                </div>
+              </dl>
 
-              <section className="representative-tickets">
-                <h3>Representative tickets</h3>
+              {selectedRow.kind === 'topic' && (
+                <section className="topic-keywords compact">
+                  <h3>Related projects</h3>
+                  <div>
+                    {relatedProjects(selectedRow).map((project) => (
+                      <span key={project.id}>{project.name}</span>
+                    ))}
+                  </div>
+                </section>
+              )}
+
+              {selectedRow.kind === 'project' && selectedCellData?.topTopics.length ? (
+                <section className="topic-keywords compact">
+                  <h3>Top topics</h3>
+                  <div>
+                    {selectedCellData.topTopics.map((topic) => (
+                      <span key={topic.topicId}>{topic.name}</span>
+                    ))}
+                  </div>
+                </section>
+              ) : null}
+
+              <section className="representative-tickets compact">
+                <h3>Representative tickets and reviews</h3>
                 {representativeTickets(selectedTickets, selectedRow, filteredTickets).map((ticket) => (
                   <article key={ticket.id}>
                     <div>
                       <strong>{ticket.subject}</strong>
-                      <span>
-                        {formatDate(ticket.createdAt)} · {ticket.status} · {ticket.priority}
-                        {ticket.source === 'review' && ticket.rating && ticket.platform
-                          ? ` · ${ticket.rating} star ${reviewSourceLabel(ticket.reviewSource)} ${titleCase(ticket.platform)} review`
-                          : ''}
-                      </span>
+                      <span>{ticketMeta(ticket)}</span>
                     </div>
                     <p>{ticket.description}</p>
                   </article>
@@ -399,74 +334,11 @@ export function TopicsAnalyticsPage() {
           ) : (
             <div className="empty-state">
               <strong>Select a heatmap cell</strong>
-              <span>Topic or project details and representative tickets will appear here.</span>
+              <span>Matching tickets, reviews, and period movement will appear here.</span>
             </div>
           )}
         </aside>
       </section>
-
-      <section className="topic-trend-grid">
-        <RowMovementList title={`Emerging ${groupingPlural(groupingMode)}`} description="Highest positive growth in the current period." items={emergingRows} direction="up" />
-        <RowMovementList title={`Declining ${groupingPlural(groupingMode)}`} description="Strongest negative movement versus previous period." items={decliningRows} direction="down" />
-      </section>
-    </section>
-  );
-}
-
-function SummaryCard({ label, value, detail, tone }: { label: string; value: string | number; detail: string; tone?: 'up' | 'down' }) {
-  return (
-    <article className={`topic-kpi-card ${tone ?? ''}`}>
-      <span>{label}</span>
-      <strong>{value}</strong>
-      <small>{detail}</small>
-    </article>
-  );
-}
-
-function Metric({ label, value, tone }: { label: string; value: string | number; tone?: 'up' | 'down' }) {
-  return (
-    <div className={`topic-metric ${tone ?? ''}`}>
-      <span>{label}</span>
-      <strong>{value}</strong>
-    </div>
-  );
-}
-
-function RowMovementList({
-  title,
-  description,
-  items,
-  direction,
-}: {
-  title: string;
-  description: string;
-  items: RowMovement[];
-  direction: 'up' | 'down';
-}) {
-  const Icon = direction === 'up' ? ArrowUpRight : ArrowDownRight;
-
-  return (
-    <section className="topic-movement-card">
-      <div className="topics-card-header compact">
-        <div>
-          <h2>{title}</h2>
-          <p>{description}</p>
-        </div>
-      </div>
-      <div className="topic-movement-list">
-        {items.map((item) => (
-          <article key={item.row.id}>
-            <div className={`topic-movement-icon ${direction}`}>
-              <Icon size={16} />
-            </div>
-            <div>
-              <strong>{item.row.name}</strong>
-              <span>{item.current} current · {item.previous} previous</span>
-            </div>
-            <em className={direction}>{formatGrowth(item.growth)}</em>
-          </article>
-        ))}
-      </div>
     </section>
   );
 }
@@ -477,40 +349,20 @@ function filterTicketsByRange(tickets: TopicAnalyticsTicket[], days: number) {
   return tickets.filter((ticket) => Date.parse(ticket.createdAt) >= cutoff);
 }
 
-function ticketsThroughActiveBucket(tickets: TopicAnalyticsTicket[], activeBucket: string | undefined, granularity: TimeGranularity) {
-  if (!activeBucket) return tickets;
-  return tickets.filter((ticket) => bucketFor(ticket.createdAt, granularity) <= activeBucket);
+function sortRowsForHeatmap(rows: HeatmapRow[], cells: ReturnType<typeof aggregateTopics>['cells'], buckets: string[], activeIndex: number) {
+  return rows
+    .filter((row) => buckets.some((bucket) => getCellCount(cells, row.id, bucket) > 0))
+    .sort((a, b) => totalThroughBucket(b.id, cells, buckets, activeIndex) - totalThroughBucket(a.id, cells, buckets, activeIndex));
 }
 
-function rowMovements(rows: HeatmapRow[], cells: HeatmapCell[], buckets: string[], activeIndex: number): RowMovement[] {
-  return rows.map((row) => {
-    const current = getCellCount(cells, row.id, buckets[activeIndex] ?? '');
-    const previous = activeIndex > 0 ? getCellCount(cells, row.id, buckets[activeIndex - 1]) : 0;
-    return {
-      row,
-      current,
-      previous,
-      growth: growthBetween(current, previous),
-    };
-  });
-}
-
-function totalForRow(rowId: string, cells: HeatmapCell[], buckets: string[], activeIndex: number) {
+function totalThroughBucket(rowId: string, cells: ReturnType<typeof aggregateTopics>['cells'], buckets: string[], activeIndex: number) {
   return buckets.slice(0, activeIndex + 1).reduce((sum, bucket) => sum + getCellCount(cells, rowId, bucket), 0);
 }
 
-function rollingGrowth(rowId: string, cells: HeatmapCell[], buckets: string[], activeIndex: number) {
-  const currentBuckets = buckets.slice(Math.max(0, activeIndex - 3), activeIndex + 1);
-  const previousBuckets = buckets.slice(Math.max(0, activeIndex - 7), Math.max(0, activeIndex - 3));
-  const current = currentBuckets.reduce((sum, bucket) => sum + getCellCount(cells, rowId, bucket), 0);
-  const previous = previousBuckets.reduce((sum, bucket) => sum + getCellCount(cells, rowId, bucket), 0);
-  return growthBetween(current, previous);
-}
-
-function getRowDetails(rowId: string, cells: HeatmapCell[], buckets: string[], activeIndex: number) {
-  const total = totalForRow(rowId, cells, buckets, activeIndex);
-  const growth = rollingGrowth(rowId, cells, buckets, activeIndex);
-  return { total, growth };
+function previousCellCount(buckets: string[], cells: ReturnType<typeof aggregateTopics>['cells'], rowId: string, bucket: string) {
+  const index = buckets.indexOf(bucket);
+  if (index <= 0) return 0;
+  return getCellCount(cells, rowId, buckets[index - 1]);
 }
 
 function representativeTickets(selectedTickets: TopicAnalyticsTicket[], row: HeatmapRow, allTickets: TopicAnalyticsTicket[]) {
@@ -522,44 +374,14 @@ function representativeTickets(selectedTickets: TopicAnalyticsTicket[], row: Hea
   return source.slice(0, 5);
 }
 
-function trendSummary(rowName: string, rowKind: HeatmapRow['kind'], growth: number, granularity: TimeGranularity) {
-  const direction = growth > 0 ? 'increased' : growth < 0 ? 'decreased' : 'stayed flat';
-  const subject = rowKind === 'project' ? 'service pressure' : rowKind === 'source' ? 'source volume' : rowKind === 'severity' ? 'review severity volume' : 'ticket volume';
-  const period = granularity === 'month' ? 'the recent monthly window' : 'the last four weeks';
-  if (growth === 0) {
-    return `${rowName} ${subject} stayed flat across ${period}.`;
-  }
-  return `${rowName} ${subject} ${direction} ${Math.abs(growth)}% across ${period}.`;
-}
-
-function formatGrowth(value: number) {
-  if (value === 0) return '0%';
-  return `${value > 0 ? '+' : ''}${value}%`;
-}
-
-function dateRangeLabel(value: AnalyticsFilterState['dateRange']) {
-  if (value === '30d') return 'Last 30 days';
-  if (value === '90d') return 'Last 90 days';
-  return 'Last 6 months';
-}
-
-function formatBucketLabel(bucket: string, granularity: TimeGranularity) {
-  if (granularity === 'month') {
-    return new Intl.DateTimeFormat('en', { month: 'long', year: 'numeric' }).format(new Date(`${bucket}-01T00:00:00`));
-  }
-  return `Week of ${new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric', year: 'numeric' }).format(new Date(`${bucket}T00:00:00`))}`;
-}
-
 function matchesRowForDetails(ticket: TopicAnalyticsTicket, row: HeatmapRow) {
   if (row.kind === 'topic') return ticket.topicId === row.id;
   if (row.kind === 'project') return ticket.projectIds.some((projectId) => projectId === row.id);
-  if (row.kind === 'source') return row.source === 'support' ? ticket.source === 'support' : ticket.reviewSource === row.source;
-  return topicTicketSeverity(ticket) === row.severity;
+  return false;
 }
 
 function matchesAnalyticsFilters(ticket: TopicAnalyticsTicket, filters: AnalyticsFilterState) {
   if (filters.source === 'support' && ticket.source !== 'support') return false;
-  if (filters.source === 'reviews' && ticket.source !== 'review') return false;
   if ((filters.source === 'google_play' || filters.source === 'app_store') && ticket.reviewSource !== filters.source) return false;
   const platform = getPlatformFromSource(filters.source);
   if (platform && ticket.platform !== platform) return false;
@@ -583,55 +405,53 @@ function topicTicketSeverity(ticket: TopicAnalyticsTicket): ReviewSeverity {
   return 'low';
 }
 
-function criticalForTopicRow(row: HeatmapRow, tickets: TopicAnalyticsTicket[]) {
-  return tickets.filter((ticket) => matchesRowForDetails(ticket, row) && topicTicketSeverity(ticket) === 'critical').length;
+function analyticsFilterProperties(filters: AnalyticsFilterState) {
+  return {
+    source: filters.source,
+    groupBy: filters.groupBy,
+    focusMode: filters.focusMode,
+    ...(filters.focusId ? { focusId: filters.focusId } : {}),
+    granularity: filters.granularity,
+  };
 }
 
-function heatmapDescription(groupingMode: TopicGroupingMode) {
-  if (groupingMode === 'project') {
-    return 'Service pressure by project. Counts include all topics mapped to each service.';
-  }
-  if (groupingMode === 'source') {
-    return 'Ticket volume by source, separating agent-managed support issues from app store reviews.';
-  }
-  if (groupingMode === 'severity') {
-    return 'Review severity over time, derived from app store ratings.';
-  }
-  return 'Controlled issue taxonomy. Every topic is mapped to one or more internal services.';
+function sourceFilterLabel(source: AnalyticsFilterState['source']) {
+  if (source === 'google_play') return 'Google Play reviews · Android';
+  if (source === 'app_store') return 'App Store reviews · iOS';
+  if (source === 'support') return 'Support tickets';
+  return 'All data';
 }
 
-function groupingLabel(mode: TopicGroupingMode) {
-  if (mode === 'project') return 'Project';
-  if (mode === 'source') return 'Source';
-  if (mode === 'severity') return 'Severity';
-  return 'Topic';
+function heatmapDescription(filters: AnalyticsFilterState) {
+  const rowLabel = filters.groupBy === 'project' ? 'projects' : 'topics';
+  return `Rows are ${rowLabel}; columns are ${filters.granularity === 'month' ? 'months' : 'weeks'}; cells are ticket and review counts.`;
 }
 
-function groupingPlural(mode: TopicGroupingMode) {
-  if (mode === 'project') return 'projects';
-  if (mode === 'source') return 'sources';
-  if (mode === 'severity') return 'severity bands';
-  return 'topics';
+function ticketMeta(ticket: TopicAnalyticsTicket) {
+  if (ticket.source === 'review') {
+    return `${formatDate(ticket.createdAt)} · ${ticket.rating ?? 'n/a'} star · ${reviewSourceLabel(ticket.reviewSource)}${ticket.appVersion ? ` · v${ticket.appVersion}` : ''}`;
+  }
+  return `${formatDate(ticket.createdAt)} · support · ${ticket.priority} · ${ticket.status}`;
 }
 
 function reviewSourceLabel(source?: ReviewSource) {
   return source === 'google_play' ? 'Google Play' : 'App Store';
 }
 
-function titleCase(value: string) {
-  return value.replace(/_/g, ' ').replace(/\b\w/g, (character) => character.toUpperCase());
+function formatGrowth(value: number) {
+  if (value === 0) return '0%';
+  return `${value > 0 ? '+' : ''}${value}%`;
+}
+
+function formatBucketLabel(bucket: string, granularity: TimeGranularity) {
+  if (granularity === 'month') {
+    return new Intl.DateTimeFormat('en', { month: 'long', year: 'numeric' }).format(new Date(`${bucket}-01T00:00:00`));
+  }
+  return `Week of ${new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric', year: 'numeric' }).format(new Date(`${bucket}T00:00:00`))}`;
 }
 
 function daysForRange(range: AnalyticsFilterState['dateRange']) {
   if (range === '30d') return 30;
   if (range === '90d') return 90;
   return 180;
-}
-
-function analyticsRowIdentity(row?: HeatmapRow) {
-  if (!row) return {};
-  if (row.kind === 'project') return { projectId: row.id };
-  if (row.kind === 'source') return row.source ? { source: row.source } : {};
-  if (row.kind === 'severity') return row.severity ? { severity: row.severity } : {};
-  return { topicId: row.id };
 }

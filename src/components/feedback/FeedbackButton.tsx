@@ -14,6 +14,7 @@ type FeedbackButtonProps = {
   timeBucket?: string;
   platform?: string;
   source?: string;
+  groupBy?: string;
   reviewSource?: string;
   severity?: string;
   dateRange?: string;
@@ -36,6 +37,7 @@ export function FeedbackButton({
   timeBucket,
   platform,
   source,
+  groupBy,
   reviewSource,
   severity,
   dateRange,
@@ -91,6 +93,7 @@ export function FeedbackButton({
       ...(timeBucket ? { timeBucket } : {}),
       ...(platform ? { platform } : {}),
       ...(source ? { source } : {}),
+      ...(groupBy ? { groupBy } : {}),
       ...(reviewSource ? { reviewSource } : {}),
       ...(severity ? { severity } : {}),
       ...(dateRange ? { dateRange } : {}),
@@ -110,9 +113,6 @@ export function FeedbackButton({
         type="button"
         className={`feedback-trigger feedback-${variant}`}
         onClick={() => {
-          if (context.startsWith('platform_')) {
-            track('platform_health_feedback_opened', { context });
-          }
           setIsOpen(true);
         }}
         aria-label={label}

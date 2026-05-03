@@ -8,7 +8,8 @@ export type ProjectId =
   | 'accounts'
   | 'cards'
   | 'compliance'
-  | 'reporting';
+  | 'reporting'
+  | 'mobile-app';
 
 export type Topic = {
   id: string;
@@ -33,6 +34,7 @@ export const projects: Project[] = [
   { id: 'cards', name: 'Cards' },
   { id: 'compliance', name: 'Compliance' },
   { id: 'reporting', name: 'Reporting' },
+  { id: 'mobile-app', name: 'Mobile App' },
 ];
 
 export const topics: Topic[] = [
@@ -103,9 +105,15 @@ export const topics: Topic[] = [
     keywords: ['verification', 'kyc', 'identity', 'review', 'compliance'],
   },
   {
+    id: 'app-crashes',
+    name: 'App crashes',
+    projectIds: ['mobile-app'],
+    keywords: ['crash', 'freeze', 'release', 'mobile', 'startup'],
+  },
+  {
     id: 'app-performance',
     name: 'Slow app performance',
-    projectIds: ['accounts', 'payments', 'reporting'],
+    projectIds: ['mobile-app', 'accounts', 'payments', 'reporting'],
     keywords: ['slow', 'loading', 'timeout', 'performance', 'latency'],
   },
   {
