@@ -16,6 +16,10 @@ type FeedbackButtonProps = {
   source?: string;
   reviewSource?: string;
   severity?: string;
+  dateRange?: string;
+  granularity?: string;
+  focusMode?: string;
+  focusId?: string;
   componentLabel?: string;
 };
 
@@ -34,6 +38,10 @@ export function FeedbackButton({
   source,
   reviewSource,
   severity,
+  dateRange,
+  granularity,
+  focusMode,
+  focusId,
   componentLabel,
 }: FeedbackButtonProps) {
   const [isOpen, setIsOpen] = useState(false);
@@ -85,6 +93,10 @@ export function FeedbackButton({
       ...(source ? { source } : {}),
       ...(reviewSource ? { reviewSource } : {}),
       ...(severity ? { severity } : {}),
+      ...(dateRange ? { dateRange } : {}),
+      ...(granularity ? { granularity } : {}),
+      ...(focusMode ? { focusMode } : {}),
+      ...(focusId ? { focusId } : {}),
     });
 
     setText('');

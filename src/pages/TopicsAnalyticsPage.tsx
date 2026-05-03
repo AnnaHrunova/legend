@@ -16,32 +16,27 @@ import {
 } from '../analytics/topics/aggregation';
 import { projects, topics } from '../analytics/topics/domain';
 import { generateTopicAnalyticsTickets, type TopicAnalyticsTicket } from '../analytics/topics/mockData';
+import {
+  AnalyticsFilterPanel,
+  type AnalyticsFilterState,
+} from '../components/analytics/AnalyticsFilterPanel';
 import { FeedbackButton } from '../components/feedback/FeedbackButton';
 import { TimelineControls } from '../components/heatmap/TimelineControls';
 import { TopicsHeatmap } from '../components/heatmap/TopicsHeatmap';
 import { formatDate } from '../components/format';
 import {
-  REVIEW_PLATFORMS,
-  REVIEW_RATING_RANGES,
-  REVIEW_SEVERITIES,
-  REVIEW_SOURCES,
   severityFromRating,
-  TICKET_SOURCES,
-  type ReviewPlatform,
-  type ReviewRatingRange,
   type ReviewSeverity,
   type ReviewSource,
-  type TicketSource,
 } from '../domain/types';
 
-type DateRangeOption = '30' | '90' | '180';
-type RowSort = 'volume' | 'growth';
-type AnalyticsFilterState = {
-  source: TicketSource | '';
-  reviewSource: ReviewSource | '';
-  platform: ReviewPlatform | '';
-  ratingRange: ReviewRatingRange | '';
-  severity: ReviewSeverity | '';
+const defaultTopicFilters: AnalyticsFilterState = {
+  source: 'all',
+  severity: 'all',
+  dateRange: '90d',
+  granularity: 'week',
+  focusMode: 'all',
+  sortBy: 'total_volume',
 };
 
 type SelectedCell = {
@@ -56,27 +51,12 @@ type RowMovement = {
   previous: number;
 };
 
-const dateRangeOptions: Array<{ value: DateRangeOption; label: string; days: number }> = [
-  { value: '30', label: 'Last 30 days', days: 30 },
-  { value: '90', label: 'Last 90 days', days: 90 },
-  { value: '180', label: 'Last 6 months', days: 180 },
-];
-
 export function TopicsAnalyticsPage() {
-  const [dateRange, setDateRange] = useState<DateRangeOption>('180');
-  const [granularity, setGranularity] = useState<TimeGranularity>('week');
+  const [filters, setFilters] = useState<AnalyticsFilterState>(defaultTopicFilters);
   const [groupingMode, setGroupingMode] = useState<TopicGroupingMode>('topic');
-  const [sort, setSort] = useState<RowSort>('volume');
   const [activeBucketIndex, setActiveBucketIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [selectedCell, setSelectedCell] = useState<SelectedCell | undefined>();
-  const [filters, setFilters] = useState<AnalyticsFilterState>({
-    source: '',
-    reviewSource: '',
-    platform: '',
-    ratingRange: '',
-    severity: '',
-  });
 
   useEffect(() => {
     track('topics_page_opened', { defaultGrouping: 'topic' });
@@ -84,27 +64,33 @@ export function TopicsAnalyticsPage() {
 
   const allTickets = useMemo(() => generateTopicAnalyticsTickets(), []);
   const rangeTickets = useMemo(
-    () => filterTicketsByRange(allTickets, dateRangeOptions.find((option) => option.value === dateRange)?.days ?? 180),
-    [allTickets, dateRange],
+    () => filterTicketsByRange(allTickets, daysForRange(filters.dateRange)),
+    [allTickets, filters.dateRange],
   );
   const filteredTickets = useMemo(
     () => rangeTickets.filter((ticket) => matchesAnalyticsFilters(ticket, filters)),
     [filters, rangeTickets],
   );
   const aggregation = useMemo(
-    () => aggregateTopics(filteredTickets, granularity, groupingMode),
-    [filteredTickets, granularity, groupingMode],
+    () => aggregateTopics(filteredTickets, filters.granularity, groupingMode),
+    [filteredTickets, filters.granularity, groupingMode],
   );
 
   const activeBucket = aggregation.buckets[activeBucketIndex] ?? aggregation.buckets[0];
 
   const sortedRows = useMemo(() => {
     const rows = [...aggregation.rows];
-    if (sort === 'growth') {
+    if (filters.sortBy === 'alphabetical') {
+      return rows.sort((a, b) => a.name.localeCompare(b.name));
+    }
+    if (filters.sortBy === 'growth_rate') {
       return rows.sort((a, b) => rollingGrowth(b.id, aggregation.cells, aggregation.buckets, activeBucketIndex) - rollingGrowth(a.id, aggregation.cells, aggregation.buckets, activeBucketIndex));
     }
+    if (filters.sortBy === 'critical_count') {
+      return rows.sort((a, b) => criticalForTopicRow(b, filteredTickets) - criticalForTopicRow(a, filteredTickets));
+    }
     return rows.sort((a, b) => totalForRow(b.id, aggregation.cells, aggregation.buckets, activeBucketIndex) - totalForRow(a.id, aggregation.cells, aggregation.buckets, activeBucketIndex));
-  }, [activeBucketIndex, aggregation.buckets, aggregation.cells, aggregation.rows, sort]);
+  }, [activeBucketIndex, aggregation.buckets, aggregation.cells, aggregation.rows, filteredTickets, filters.sortBy]);
 
   const movement = useMemo(
     () => rowMovements(aggregation.rows, aggregation.cells, aggregation.buckets, activeBucketIndex),
@@ -118,7 +104,7 @@ export function TopicsAnalyticsPage() {
     : sortedRows[0];
   const selectedBucket = selectedCell?.timeBucket ?? activeBucket;
   const selectedTickets = selectedRow && selectedBucket
-    ? filterTicketsForRow(filteredTickets, selectedRow, selectedBucket, granularity)
+    ? filterTicketsForRow(filteredTickets, selectedRow, selectedBucket, filters.granularity)
     : [];
   const selectedCellData = selectedRow && selectedBucket
     ? getCell(aggregation.cells, selectedRow.id, selectedBucket)
@@ -128,15 +114,15 @@ export function TopicsAnalyticsPage() {
     : undefined;
 
   const visibleTickets = useMemo(
-    () => ticketsThroughActiveBucket(filteredTickets, activeBucket, granularity),
-    [activeBucket, filteredTickets, granularity],
+    () => ticketsThroughActiveBucket(filteredTickets, activeBucket, filters.granularity),
+    [activeBucket, filteredTickets, filters.granularity],
   );
 
   useEffect(() => {
     setActiveBucketIndex(Math.max(0, aggregation.buckets.length - 1));
     setSelectedCell(undefined);
     setIsPlaying(false);
-  }, [aggregation.buckets.length, dateRange, filters, granularity, groupingMode]);
+  }, [aggregation.buckets.length, filters, groupingMode]);
 
   useEffect(() => {
     if (!isPlaying || !aggregation.buckets.length) return;
@@ -156,19 +142,6 @@ export function TopicsAnalyticsPage() {
     return () => window.clearInterval(timer);
   }, [aggregation.buckets, aggregation.buckets.length, isPlaying]);
 
-  const handleGranularityChange = (next: TimeGranularity) => {
-    if (next === granularity) return;
-    const previous = granularity;
-    setGranularity(next);
-    track('topics_granularity_changed', { from: previous, to: next });
-  };
-
-  const handleDateRangeChange = (next: DateRangeOption) => {
-    if (next === dateRange) return;
-    setDateRange(next);
-    track('topics_date_range_changed', { range: analyticsDateRange(next) });
-  };
-
   const handleGroupingChange = (next: TopicGroupingMode) => {
     if (next === groupingMode) return;
     const previous = groupingMode;
@@ -176,14 +149,6 @@ export function TopicsAnalyticsPage() {
     track('topics_grouping_changed', {
       from: previous,
       to: next,
-    });
-  };
-
-  const handleFilterChange = <K extends keyof AnalyticsFilterState>(key: K, value: AnalyticsFilterState[K]) => {
-    setFilters((current) => {
-      const next = { ...current, [key]: value };
-      track('tickets_filter_changed', analyticsFilterPayload(next));
-      return next;
     });
   };
 
@@ -253,35 +218,23 @@ export function TopicsAnalyticsPage() {
           <h1>Topics</h1>
           <p className="view-description">See which payment-app issues users report and which internal services are under stress.</p>
         </div>
-        <div className="topics-header-actions">
-          <label className="topics-filter-card">
-            <span>Date range</span>
-            <select value={dateRange} onChange={(event) => handleDateRangeChange(event.target.value as DateRangeOption)}>
-              {dateRangeOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <div className="segmented-control topics-segmented" aria-label="Time granularity">
-            {(['week', 'month'] as TimeGranularity[]).map((item) => (
-              <button
-                key={item}
-                type="button"
-                className={granularity === item ? 'active' : ''}
-                onClick={() => handleGranularityChange(item)}
-              >
-                {item === 'week' ? 'Week' : 'Month'}
-              </button>
-            ))}
-          </div>
-          <FeedbackButton context="reports_dashboard" variant="inline" componentLabel="Topics analytics" />
-        </div>
+        <FeedbackButton context="reports_dashboard" variant="inline" componentLabel="Topics analytics" />
       </div>
 
+      <AnalyticsFilterPanel
+        value={filters}
+        defaultValue={defaultTopicFilters}
+        projectOptions={projects.map((project) => ({ id: project.id, name: project.name }))}
+        topicOptions={topics.map((topic) => ({ id: topic.id, name: topic.name }))}
+        helperText="Source controls marketplace context. Google Play implies Android, App Store implies iOS."
+        onChange={(next) => {
+          setFilters(next);
+          setSelectedCell(undefined);
+        }}
+      />
+
       <section className="topics-kpi-grid">
-        <SummaryCard label="Total tickets analyzed" value={visibleTickets.length.toLocaleString()} detail={dateRangeLabel(dateRange)} />
+        <SummaryCard label="Total tickets analyzed" value={visibleTickets.length.toLocaleString()} detail={dateRangeLabel(filters.dateRange)} />
         <SummaryCard label="Mapped topics" value={topics.length} detail={`${projects.length} internal services`} />
         <SummaryCard
           label={`Fastest growing ${groupingLabel(groupingMode).toLowerCase()}`}
@@ -333,72 +286,7 @@ export function TopicsAnalyticsPage() {
                 source={feedbackSource}
                 severity={feedbackSeverity}
               />
-              <label className="compact-label topics-sort-label">
-                <span>Sort</span>
-                <select value={sort} onChange={(event) => setSort(event.target.value as RowSort)}>
-                  <option value="volume">By total volume</option>
-                  <option value="growth">By growth rate</option>
-                </select>
-              </label>
             </div>
-          </div>
-
-          <div className="topics-filter-strip" aria-label="Review and source filters">
-            <label className="compact-label topics-sort-label">
-              <span>Source</span>
-              <select value={filters.source} onChange={(event) => handleFilterChange('source', event.target.value as TicketSource | '')}>
-                <option value="">All sources</option>
-                {TICKET_SOURCES.map((source) => (
-                  <option key={source} value={source}>
-                    {source === 'review' ? 'Reviews' : 'Support tickets'}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="compact-label topics-sort-label">
-              <span>Review source</span>
-              <select value={filters.reviewSource} onChange={(event) => handleFilterChange('reviewSource', event.target.value as ReviewSource | '')}>
-                <option value="">All review sources</option>
-                {REVIEW_SOURCES.map((source) => (
-                  <option key={source} value={source}>
-                    {reviewSourceLabel(source)}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="compact-label topics-sort-label">
-              <span>Platform</span>
-              <select value={filters.platform} onChange={(event) => handleFilterChange('platform', event.target.value as ReviewPlatform | '')}>
-                <option value="">All platforms</option>
-                {REVIEW_PLATFORMS.map((platform) => (
-                  <option key={platform} value={platform}>
-                    {titleCase(platform)}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="compact-label topics-sort-label">
-              <span>Rating</span>
-              <select value={filters.ratingRange} onChange={(event) => handleFilterChange('ratingRange', event.target.value as ReviewRatingRange | '')}>
-                <option value="">All ratings</option>
-                {REVIEW_RATING_RANGES.map((range) => (
-                  <option key={range} value={range}>
-                    {ratingRangeLabel(range)}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="compact-label topics-sort-label">
-              <span>Severity</span>
-              <select value={filters.severity} onChange={(event) => handleFilterChange('severity', event.target.value as ReviewSeverity | '')}>
-                <option value="">All severity</option>
-                {REVIEW_SEVERITIES.map((severity) => (
-                  <option key={severity} value={severity}>
-                    {titleCase(severity)}
-                  </option>
-                ))}
-              </select>
-            </label>
           </div>
 
           <div className="topics-timeline-row">
@@ -406,7 +294,7 @@ export function TopicsAnalyticsPage() {
               buckets={aggregation.buckets}
               activeIndex={activeBucketIndex}
               isPlaying={isPlaying}
-              granularity={granularity}
+              granularity={filters.granularity}
               onPlayPause={handlePlayPause}
               onStep={(direction) => selectBucket(activeBucketIndex + direction)}
               onChange={selectBucket}
@@ -427,7 +315,7 @@ export function TopicsAnalyticsPage() {
             cells={aggregation.cells}
             maxCount={aggregation.maxCount}
             activeBucketIndex={activeBucketIndex}
-            granularity={granularity}
+            granularity={filters.granularity}
             groupingMode={groupingMode}
             selected={selectedCell}
             onSelect={handleCellSelect}
@@ -440,7 +328,7 @@ export function TopicsAnalyticsPage() {
               <i />
               <strong>High</strong>
             </div>
-            <span>{activeBucket ? formatBucketLabel(activeBucket, granularity) : 'No period selected'}</span>
+            <span>{activeBucket ? formatBucketLabel(activeBucket, filters.granularity) : 'No period selected'}</span>
           </div>
         </div>
 
@@ -469,7 +357,7 @@ export function TopicsAnalyticsPage() {
                 <Metric label="Growth" value={formatGrowth(selectedStats.growth)} tone={selectedStats.growth >= 0 ? 'up' : 'down'} />
               </div>
               <p className="topic-trend-summary">
-                {trendSummary(selectedRow.name, selectedRow.kind, selectedStats.growth, granularity)}
+                {trendSummary(selectedRow.name, selectedRow.kind, selectedStats.growth, filters.granularity)}
               </p>
 
               <section className="topic-keywords">
@@ -649,8 +537,10 @@ function formatGrowth(value: number) {
   return `${value > 0 ? '+' : ''}${value}%`;
 }
 
-function dateRangeLabel(value: DateRangeOption) {
-  return dateRangeOptions.find((option) => option.value === value)?.label ?? 'Selected range';
+function dateRangeLabel(value: AnalyticsFilterState['dateRange']) {
+  if (value === '30d') return 'Last 30 days';
+  if (value === '90d') return 'Last 90 days';
+  return 'Last 6 months';
 }
 
 function formatBucketLabel(bucket: string, granularity: TimeGranularity) {
@@ -664,33 +554,37 @@ function matchesRowForDetails(ticket: TopicAnalyticsTicket, row: HeatmapRow) {
   if (row.kind === 'topic') return ticket.topicId === row.id;
   if (row.kind === 'project') return ticket.projectIds.some((projectId) => projectId === row.id);
   if (row.kind === 'source') return row.source === 'support' ? ticket.source === 'support' : ticket.reviewSource === row.source;
-  return severityFromRating(ticket.rating) === row.severity;
+  return topicTicketSeverity(ticket) === row.severity;
 }
 
 function matchesAnalyticsFilters(ticket: TopicAnalyticsTicket, filters: AnalyticsFilterState) {
-  if (filters.source && ticket.source !== filters.source) return false;
-  if (filters.reviewSource && ticket.reviewSource !== filters.reviewSource) return false;
-  if (filters.platform && ticket.platform !== filters.platform) return false;
-  if (filters.ratingRange && !matchesRatingRange(ticket.rating, filters.ratingRange)) return false;
-  if (filters.severity && severityFromRating(ticket.rating) !== filters.severity) return false;
+  if (filters.source === 'support' && ticket.source !== 'support') return false;
+  if (filters.source === 'reviews' && ticket.source !== 'review') return false;
+  if ((filters.source === 'google_play' || filters.source === 'app_store') && ticket.reviewSource !== filters.source) return false;
+  const platform = getPlatformFromSource(filters.source);
+  if (platform && ticket.platform !== platform) return false;
+  if (filters.severity !== 'all' && topicTicketSeverity(ticket) !== filters.severity) return false;
+  if (filters.focusMode === 'topic' && filters.focusId && ticket.topicId !== filters.focusId) return false;
+  if (filters.focusMode === 'project' && filters.focusId && !ticket.projectIds.some((projectId) => projectId === filters.focusId)) return false;
   return true;
 }
 
-function matchesRatingRange(rating: TopicAnalyticsTicket['rating'], range: ReviewRatingRange) {
-  if (!rating) return false;
-  if (range === '1-2') return rating <= 2;
-  if (range === '3') return rating === 3;
-  return rating >= 4;
+function getPlatformFromSource(source: AnalyticsFilterState['source']) {
+  if (source === 'google_play') return 'android';
+  if (source === 'app_store') return 'ios';
+  return undefined;
 }
 
-function analyticsFilterPayload(filters: AnalyticsFilterState) {
-  return {
-    ...(filters.source ? { source: filters.source } : {}),
-    ...(filters.reviewSource ? { reviewSource: filters.reviewSource } : {}),
-    ...(filters.platform ? { platform: filters.platform } : {}),
-    ...(filters.ratingRange ? { ratingRange: filters.ratingRange } : {}),
-    ...(filters.severity ? { severity: filters.severity } : {}),
-  };
+function topicTicketSeverity(ticket: TopicAnalyticsTicket): ReviewSeverity {
+  const reviewSeverity = severityFromRating(ticket.rating);
+  if (reviewSeverity) return reviewSeverity;
+  if (ticket.priority === 'Urgent' || ticket.priority === 'High') return 'critical';
+  if (ticket.priority === 'Normal') return 'medium';
+  return 'low';
+}
+
+function criticalForTopicRow(row: HeatmapRow, tickets: TopicAnalyticsTicket[]) {
+  return tickets.filter((ticket) => matchesRowForDetails(ticket, row) && topicTicketSeverity(ticket) === 'critical').length;
 }
 
 function heatmapDescription(groupingMode: TopicGroupingMode) {
@@ -720,12 +614,6 @@ function groupingPlural(mode: TopicGroupingMode) {
   return 'topics';
 }
 
-function ratingRangeLabel(range: ReviewRatingRange) {
-  if (range === '1-2') return '1-2 stars';
-  if (range === '3') return '3 stars';
-  return '4-5 stars';
-}
-
 function reviewSourceLabel(source?: ReviewSource) {
   return source === 'google_play' ? 'Google Play' : 'App Store';
 }
@@ -734,10 +622,10 @@ function titleCase(value: string) {
   return value.replace(/_/g, ' ').replace(/\b\w/g, (character) => character.toUpperCase());
 }
 
-function analyticsDateRange(value: DateRangeOption): '30d' | '90d' | '6m' {
-  if (value === '30') return '30d';
-  if (value === '90') return '90d';
-  return '6m';
+function daysForRange(range: AnalyticsFilterState['dateRange']) {
+  if (range === '30d') return 30;
+  if (range === '90d') return 90;
+  return 180;
 }
 
 function analyticsRowIdentity(row?: HeatmapRow) {

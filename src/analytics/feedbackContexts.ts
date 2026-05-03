@@ -28,6 +28,7 @@ export type FeedbackContext =
   | 'topics_grouping_control'
   | 'topics_timeline'
   | 'topics_details_panel'
+  | 'analytics_filter_panel'
   | 'platform_health_dashboard'
   | 'platform_comparison_cards'
   | 'platform_topics_heatmap'

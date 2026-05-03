@@ -214,7 +214,15 @@ function matchesRow(ticket: TopicAnalyticsTicket, row: HeatmapRow) {
   if (row.kind === 'topic') return ticket.topicId === row.id;
   if (row.kind === 'project') return ticket.projectIds.some((projectId) => projectId === row.id);
   if (row.kind === 'source') return row.source === 'support' ? ticket.source === 'support' : ticket.reviewSource === row.source;
-  return severityFromRating(ticket.rating) === row.severity;
+  return topicTicketSeverity(ticket) === row.severity;
+}
+
+function topicTicketSeverity(ticket: TopicAnalyticsTicket): ReviewSeverity {
+  const reviewSeverity = severityFromRating(ticket.rating);
+  if (reviewSeverity) return reviewSeverity;
+  if (ticket.priority === 'Urgent' || ticket.priority === 'High') return 'critical';
+  if (ticket.priority === 'Normal') return 'medium';
+  return 'low';
 }
 
 function topicBreakdown(tickets: TopicAnalyticsTicket[]) {

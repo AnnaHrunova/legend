@@ -163,6 +163,7 @@ This is a frontend prototype.
 - keep UI simple
 - avoid feature overload
 - remove instead of adding
+- do not reintroduce a separate platform dropdown unless explicitly requested
 
 ---
 

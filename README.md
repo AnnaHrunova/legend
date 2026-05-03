@@ -132,6 +132,35 @@ Reference: [Document Clustering With LLM Embeddings in Scikit-Learn](https://mac
 
 This article explains how text can be converted into embeddings and grouped into topics using clustering algorithms.
 
+## Analytics Filter UX
+
+Topics and Platform Health use one shared filter model through `src/components/analytics/AnalyticsFilterPanel.tsx`.
+
+Source is the single source of truth:
+
+- `All data` includes support tickets, Google Play reviews, and App Store reviews
+- `Support tickets` scopes analytics to support tickets only
+- `Reviews` includes Google Play and App Store reviews
+- `Google Play reviews` implies Android
+- `App Store reviews` implies iOS
+
+There is intentionally no separate platform dropdown. Platform is derived from source, because `Google Play + iOS` and `App Store + Android` are invalid combinations. Do not reintroduce a platform selector unless the product model changes explicitly.
+
+Filters use progressive disclosure:
+
+- primary controls are source, severity, date range, and granularity
+- contextual controls appear only when needed
+- advanced sorting controls stay collapsed by default
+- active chips summarize state but are not the main control surface
+
+Focus mode scopes the heatmap, playback, details panel, and summaries to one analysis target:
+
+- `All topics and projects`
+- `One project`
+- `One topic`
+
+This lets users inspect a single service or user-facing problem over time without unrelated data adding noise. The UX is designed to avoid redundant choices, reduce cognitive load, and make invalid filter combinations impossible.
+
 ## Analytics Architecture
 
 All analytics tracking must go through:

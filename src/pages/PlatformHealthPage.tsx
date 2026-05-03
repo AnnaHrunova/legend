@@ -17,30 +17,38 @@ import {
   platformHealthTopics,
   platformProjects,
   topicById,
+  type PlatformHealthTopic,
+  type PlatformProjectId,
   type PlatformHealthSelection,
   type PlatformRelease,
 } from '../analytics/platformHealth/domain';
 import { generatePlatformHealthItems, platformHealthReleases, type PlatformHealthItem } from '../analytics/platformHealth/mockData';
+import {
+  AnalyticsFilterPanel,
+  type AnalyticsFilterState,
+} from '../components/analytics/AnalyticsFilterPanel';
 import { FeedbackButton } from '../components/feedback/FeedbackButton';
 import { formatDate } from '../components/format';
 
-type DateRangeOption = '30' | '90' | '180';
 type SelectedCell = {
   platform: PlatformHealthSelection;
   topicId: string;
   timeBucket: string;
 };
 
-const ranges: Array<{ value: DateRangeOption; label: string; days: number }> = [
-  { value: '30', label: 'Last 30 days', days: 30 },
-  { value: '90', label: 'Last 90 days', days: 90 },
-  { value: '180', label: 'Last 6 months', days: 180 },
-];
+const defaultAnalyticsFilters: AnalyticsFilterState = {
+  source: 'all',
+  severity: 'all',
+  dateRange: '90d',
+  granularity: 'week',
+  focusMode: 'all',
+  sortBy: 'total_volume',
+};
 
 export function PlatformHealthPage() {
-  const [range, setRange] = useState<DateRangeOption>('90');
-  const [granularity, setGranularity] = useState<PlatformHealthGranularity>('week');
-  const [platform, setPlatform] = useState<PlatformHealthSelection>('both');
+  const [filters, setFilters] = useState<AnalyticsFilterState>(defaultAnalyticsFilters);
+  const [activeBucketIndex, setActiveBucketIndex] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(false);
   const [selectedCell, setSelectedCell] = useState<SelectedCell | undefined>();
 
   useEffect(() => {
@@ -52,24 +60,42 @@ export function PlatformHealthPage() {
 
   const allItems = useMemo(() => generatePlatformHealthItems(), []);
   const releaseMarkers = useMemo(() => platformHealthReleases(), []);
-  const days = ranges.find((item) => item.value === range)?.days ?? 90;
+  const days = daysForRange(filters.dateRange);
   const currentItems = useMemo(() => filterByRange(allItems, days, 0), [allItems, days]);
   const previousItems = useMemo(() => filterByRange(allItems, days, days), [allItems, days]);
-  const scopedItems = useMemo(() => currentItems.filter((item) => matchesPlatform(item, platform)), [currentItems, platform]);
-  const heatmap = useMemo(() => aggregatePlatformHeatmap(currentItems, granularity, platform), [currentItems, granularity, platform]);
-  const androidStats = useMemo(() => platformStats(currentItems, previousItems, 'android'), [currentItems, previousItems]);
-  const iosStats = useMemo(() => platformStats(currentItems, previousItems, 'ios'), [currentItems, previousItems]);
-  const risks = useMemo(() => emergingRisks(currentItems, previousItems), [currentItems, previousItems]);
+  const effectivePlatform = effectivePlatformForSource(filters.source);
+  const focusedTopics = useMemo(
+    () => topicsForFocus(filters),
+    [filters],
+  );
+  const filteredCurrentItems = useMemo(
+    () => currentItems.filter((item) => matchesPlatformHealthFilters(item, filters)),
+    [currentItems, filters],
+  );
+  const filteredPreviousItems = useMemo(
+    () => previousItems.filter((item) => matchesPlatformHealthFilters(item, filters)),
+    [filters, previousItems],
+  );
+  const scopedItems = useMemo(() => filteredCurrentItems, [filteredCurrentItems]);
+  const heatmap = useMemo(() => aggregatePlatformHeatmap(filteredCurrentItems, filters.granularity, 'both'), [filteredCurrentItems, filters.granularity]);
+  const visibleTopics = useMemo(
+    () => sortPlatformTopics(focusedTopics, heatmap.cells, heatmap.buckets, filters.sortBy, activeBucketIndex),
+    [activeBucketIndex, filters.sortBy, focusedTopics, heatmap.buckets, heatmap.cells],
+  );
+  const androidStats = useMemo(() => platformStats(filteredCurrentItems, filteredPreviousItems, 'android'), [filteredCurrentItems, filteredPreviousItems]);
+  const iosStats = useMemo(() => platformStats(filteredCurrentItems, filteredPreviousItems, 'ios'), [filteredCurrentItems, filteredPreviousItems]);
+  const risks = useMemo(() => emergingRisks(filteredCurrentItems, filteredPreviousItems), [filteredCurrentItems, filteredPreviousItems]);
   const breakdown = useMemo(() => sourceBreakdown(scopedItems), [scopedItems]);
+  const activeBucket = heatmap.buckets[activeBucketIndex] ?? heatmap.buckets[0] ?? '';
 
   const selected = selectedCell ?? {
-    platform,
-    topicId: platformHealthTopics[0]?.id ?? 'payment-failed',
-    timeBucket: heatmap.buckets[heatmap.buckets.length - 1] ?? '',
+    platform: effectivePlatform,
+    topicId: visibleTopics[0]?.id ?? platformHealthTopics[0]?.id ?? 'payment-failed',
+    timeBucket: activeBucket,
   };
   const selectedTopic = topicById(selected.topicId);
   const selectedItems = selected.timeBucket
-    ? filterItemsForCell(currentItems, selected.topicId, selected.timeBucket, granularity, selected.platform)
+    ? filterItemsForCell(filteredCurrentItems, selected.topicId, selected.timeBucket, filters.granularity, 'both')
     : [];
   const selectedCriticalCount = selectedItems.filter((item) => severityFor(item) === 'critical').length;
   const selectedRatings = selectedItems.map((item) => item.rating).filter((rating): rating is 1 | 2 | 3 | 4 | 5 => rating !== undefined);
@@ -83,42 +109,51 @@ export function PlatformHealthPage() {
 
   useEffect(() => {
     track('platform_health_source_breakdown_viewed', {
-      range: rangeLabelForAnalytics(range),
-      granularity,
+      range: filters.dateRange,
+      granularity: filters.granularity,
     });
-  }, [granularity, range]);
+  }, [filters.dateRange, filters.granularity]);
 
-  function changeRange(next: DateRangeOption) {
-    if (next === range) return;
-    const previous = range;
-    setRange(next);
+  useEffect(() => {
+    setActiveBucketIndex(Math.max(0, heatmap.buckets.length - 1));
     setSelectedCell(undefined);
-    track('platform_health_range_changed', {
-      from: rangeLabelForAnalytics(previous),
-      to: rangeLabelForAnalytics(next),
+    setIsPlaying(false);
+  }, [filters, heatmap.buckets.length]);
+
+  useEffect(() => {
+    if (!isPlaying || !heatmap.buckets.length) return;
+    const timer = window.setInterval(() => {
+      setActiveBucketIndex((current) => {
+        if (current >= heatmap.buckets.length - 1) {
+          setIsPlaying(false);
+          return current;
+        }
+        return current + 1;
+      });
+    }, 950);
+    return () => window.clearInterval(timer);
+  }, [heatmap.buckets.length, isPlaying]);
+
+  function togglePlay() {
+    setIsPlaying((current) => {
+      const next = !current;
+      if (next && activeBucketIndex >= heatmap.buckets.length - 1) {
+        setActiveBucketIndex(0);
+      }
+      return next;
     });
   }
 
-  function changeGranularity(next: PlatformHealthGranularity) {
-    if (next === granularity) return;
-    const previous = granularity;
-    setGranularity(next);
-    setSelectedCell(undefined);
-    track('platform_health_granularity_changed', { from: previous, to: next });
-  }
-
-  function changePlatform(next: PlatformHealthSelection) {
-    if (next === platform) return;
-    setPlatform(next);
-    setSelectedCell(undefined);
-    track('platform_health_platform_selected', { platform: next });
+  function stepTimeline(direction: number) {
+    setIsPlaying(false);
+    setActiveBucketIndex((current) => Math.max(0, Math.min(current + direction, heatmap.buckets.length - 1)));
   }
 
   function selectCell(topicId: string, timeBucket: string) {
     const cell = heatmap.cells.find((item) => item.topicId === topicId && item.timeBucket === timeBucket);
-    setSelectedCell({ platform, topicId, timeBucket });
+    setSelectedCell({ platform: effectivePlatform, topicId, timeBucket });
     track('platform_health_cell_selected', {
-      platform,
+      platform: effectivePlatform,
       topicId,
       timeBucket,
       count: cell?.count ?? 0,
@@ -127,8 +162,8 @@ export function PlatformHealthPage() {
   }
 
   function selectTopic(topicId: string) {
-    setSelectedCell({ platform, topicId, timeBucket: selected.timeBucket });
-    track('platform_health_topic_selected', { platform, topicId });
+    setSelectedCell({ platform: effectivePlatform, topicId, timeBucket: selected.timeBucket });
+    track('platform_health_topic_selected', { platform: effectivePlatform, topicId });
   }
 
   function clickRelease(release: PlatformRelease) {
@@ -147,25 +182,20 @@ export function PlatformHealthPage() {
           <h1>Platform Health</h1>
           <p className="view-description">Android vs iOS health based on support tickets and app reviews.</p>
         </div>
-        <div className="topics-header-actions">
-          <label className="topics-filter-card">
-            <span>Date range</span>
-            <select value={range} onChange={(event) => changeRange(event.target.value as DateRangeOption)}>
-              {ranges.map((item) => (
-                <option key={item.value} value={item.value}>{item.label}</option>
-              ))}
-            </select>
-          </label>
-          <div className="segmented-control topics-segmented" aria-label="Platform health granularity">
-            {(['week', 'month'] as PlatformHealthGranularity[]).map((item) => (
-              <button key={item} type="button" className={granularity === item ? 'active' : ''} onClick={() => changeGranularity(item)}>
-                {item === 'week' ? 'Week' : 'Month'}
-              </button>
-            ))}
-          </div>
-          <FeedbackButton context="platform_health_dashboard" variant="inline" componentLabel="Platform Health dashboard" platform={platform} />
-        </div>
+        <FeedbackButton context="platform_health_dashboard" variant="inline" componentLabel="Platform Health dashboard" platform={effectivePlatform} />
       </div>
+
+      <AnalyticsFilterPanel
+        value={filters}
+        defaultValue={defaultAnalyticsFilters}
+        projectOptions={Object.entries(platformProjects).map(([id, name]) => ({ id, name }))}
+        topicOptions={platformHealthTopics.map((topic) => ({ id: topic.id, name: topic.name }))}
+        helperText="Source controls platform context. Google Play implies Android, App Store implies iOS."
+        onChange={(next) => {
+          setFilters(next);
+          setSelectedCell(undefined);
+        }}
+      />
 
       <section className="topics-kpi-grid">
         <SummaryCard label="Health winner" value={winner} detail="Higher score has fewer severe complaints" />
@@ -188,7 +218,7 @@ export function PlatformHealthPage() {
               <h2>Source breakdown</h2>
               <p>Selected period and platform scope.</p>
             </div>
-            <FeedbackButton context="platform_source_breakdown" variant="icon" componentLabel="Platform source breakdown" platform={platform} />
+            <FeedbackButton context="platform_source_breakdown" variant="icon" componentLabel="Platform source breakdown" platform={effectivePlatform} />
           </div>
           <SourceBar label="Support" count={breakdown.support} total={scopedItems.length} />
           <SourceBar label="Google Play" count={breakdown.google_play} total={scopedItems.length} />
@@ -203,21 +233,33 @@ export function PlatformHealthPage() {
               <h2>Platform topics heatmap</h2>
               <p>Issue volume by topic over time. Cells include support tickets and public reviews.</p>
             </div>
-            <FeedbackButton context="platform_topics_heatmap" variant="icon" componentLabel="Platform topics heatmap" platform={platform} topicId={selected.topicId} timeBucket={selected.timeBucket} />
-            <div className="segmented-control topics-segmented" aria-label="Select platform">
-              {(['android', 'ios', 'both'] as PlatformHealthSelection[]).map((item) => (
-                <button key={item} type="button" className={platform === item ? 'active' : ''} onClick={() => changePlatform(item)}>
-                  {platformLabel(item)}
-                </button>
-              ))}
-            </div>
+            <FeedbackButton context="platform_topics_heatmap" variant="icon" componentLabel="Platform topics heatmap" platform={effectivePlatform} topicId={selected.topicId} timeBucket={selected.timeBucket} />
+          </div>
+
+          <div className="platform-playback-row">
+            <button type="button" onClick={() => stepTimeline(-1)} disabled={activeBucketIndex <= 0}>Previous</button>
+            <button type="button" className="primary-button" onClick={togglePlay}>{isPlaying ? 'Pause' : 'Play'}</button>
+            <button type="button" onClick={() => stepTimeline(1)} disabled={activeBucketIndex >= heatmap.buckets.length - 1}>Next</button>
+            <input
+              type="range"
+              min={0}
+              max={Math.max(0, heatmap.buckets.length - 1)}
+              value={activeBucketIndex}
+              onChange={(event) => {
+                setIsPlaying(false);
+                setActiveBucketIndex(Number(event.target.value));
+              }}
+            />
+            <span>Current period: {activeBucket ? formatBucketFull(activeBucket, filters.granularity) : 'No period'}</span>
           </div>
 
           <PlatformHeatmap
+            topics={visibleTopics}
             buckets={heatmap.buckets}
             cells={heatmap.cells}
             maxCount={heatmap.maxCount}
-            granularity={granularity}
+            activeBucketIndex={activeBucketIndex}
+            granularity={filters.granularity}
             selected={selectedCell}
             onSelect={selectCell}
             onTopicSelect={selectTopic}
@@ -226,7 +268,7 @@ export function PlatformHealthPage() {
           <div className="platform-release-strip">
             <div className="section-title-row">
               <strong>Release markers</strong>
-              <FeedbackButton context="platform_release_markers" variant="icon" componentLabel="Platform release markers" platform={platform} />
+              <FeedbackButton context="platform_release_markers" variant="icon" componentLabel="Platform release markers" platform={effectivePlatform} />
             </div>
             <div className="platform-release-list">
               {releaseMarkers.map((release) => (
@@ -251,7 +293,7 @@ export function PlatformHealthPage() {
             <Metric label="Total issues" value={selectedItems.length} />
             <Metric label="Critical" value={selectedCriticalCount} tone={selectedCriticalCount > 0 ? 'down' : 'up'} />
             <Metric label="Avg rating" value={selectedAverageRating} />
-            <Metric label="Period" value={selected.timeBucket ? formatBucket(selected.timeBucket, granularity) : 'n/a'} />
+            <Metric label="Period" value={selected.timeBucket ? formatBucket(selected.timeBucket, filters.granularity) : 'n/a'} />
           </div>
           <section className="topic-keywords">
             <h3>Related projects</h3>
@@ -307,17 +349,21 @@ export function PlatformHealthPage() {
 }
 
 function PlatformHeatmap({
+  topics,
   buckets,
   cells,
   maxCount,
+  activeBucketIndex,
   granularity,
   selected,
   onSelect,
   onTopicSelect,
 }: {
+  topics: PlatformHealthTopic[];
   buckets: string[];
   cells: PlatformHeatmapCell[];
   maxCount: number;
+  activeBucketIndex: number;
   granularity: PlatformHealthGranularity;
   selected?: SelectedCell;
   onSelect: (topicId: string, timeBucket: string) => void;
@@ -327,24 +373,26 @@ function PlatformHeatmap({
     <div className="platform-heatmap-shell">
       <div className="platform-heatmap" style={{ gridTemplateColumns: `240px repeat(${buckets.length}, minmax(54px, 1fr))` }}>
         <div className="heatmap-corner">Topic</div>
-        {buckets.map((bucket) => (
-          <div key={bucket} className="heatmap-column-label">{formatBucket(bucket, granularity)}</div>
+        {buckets.map((bucket, index) => (
+          <div key={bucket} className={`heatmap-column-label ${index === activeBucketIndex ? 'active' : ''} ${index > activeBucketIndex ? 'future' : ''}`}>{formatBucket(bucket, granularity)}</div>
         ))}
-        {platformHealthTopics.map((topic) => (
+        {topics.map((topic) => (
           <Fragment key={topic.id}>
             <button type="button" className="heatmap-topic-label refined" onClick={() => onTopicSelect(topic.id)}>
               <strong>{topic.name}</strong>
               <span>{topic.projectIds.map((projectId) => platformProjects[projectId]).join(', ')}</span>
             </button>
-            {buckets.map((bucket) => {
+            {buckets.map((bucket, index) => {
               const cell = cells.find((item) => item.topicId === topic.id && item.timeBucket === bucket);
               const count = cell?.count ?? 0;
               const selectedClass = selected?.topicId === topic.id && selected.timeBucket === bucket ? 'selected' : '';
+              const activeClass = index === activeBucketIndex ? 'active-column' : '';
+              const futureClass = index > activeBucketIndex ? 'future' : '';
               return (
                 <button
                   key={`${topic.id}-${bucket}`}
                   type="button"
-                  className={`heatmap-cell refined ${selectedClass}`}
+                  className={`heatmap-cell refined ${selectedClass} ${activeClass} ${futureClass}`}
                   style={{ background: platformHeatColor(maxCount ? count / maxCount : 0) }}
                   title={`${topic.name}\n${formatBucket(bucket, granularity)}\nIssues: ${count}\nCritical: ${cell?.criticalCount ?? 0}\nAvg rating: ${cell?.averageRating ?? 'n/a'}\nGrowth: ${formatTrend(cell?.growth ?? 0)}`}
                   onClick={() => onSelect(topic.id, bucket)}
@@ -417,6 +465,46 @@ function SourceBar({ label, count, total }: { label: string; count: number; tota
   );
 }
 
+function sortPlatformTopics(
+  topics: PlatformHealthTopic[],
+  cells: PlatformHeatmapCell[],
+  buckets: string[],
+  sortBy: AnalyticsFilterState['sortBy'],
+  activeIndex: number,
+) {
+  const activeBucket = buckets[activeIndex] ?? buckets[buckets.length - 1];
+  return [...topics].sort((a, b) => {
+    if (sortBy === 'alphabetical') return a.name.localeCompare(b.name);
+    if (sortBy === 'critical_count') return criticalForTopic(b.id, cells) - criticalForTopic(a.id, cells);
+    if (sortBy === 'growth_rate') {
+      return growthForTopic(b.id, cells, buckets, activeIndex) - growthForTopic(a.id, cells, buckets, activeIndex);
+    }
+    return totalForTopic(b.id, cells, activeBucket) - totalForTopic(a.id, cells, activeBucket);
+  });
+}
+
+function totalForTopic(topicId: string, cells: PlatformHeatmapCell[], activeBucket?: string) {
+  return cells
+    .filter((cell) => cell.topicId === topicId && (!activeBucket || cell.timeBucket <= activeBucket))
+    .reduce((sum, cell) => sum + cell.count, 0);
+}
+
+function criticalForTopic(topicId: string, cells: PlatformHeatmapCell[]) {
+  return cells
+    .filter((cell) => cell.topicId === topicId)
+    .reduce((sum, cell) => sum + cell.criticalCount, 0);
+}
+
+function growthForTopic(topicId: string, cells: PlatformHeatmapCell[], buckets: string[], activeIndex: number) {
+  const current = buckets.slice(Math.max(0, activeIndex - 3), activeIndex + 1)
+    .reduce((sum, bucket) => sum + (cells.find((cell) => cell.topicId === topicId && cell.timeBucket === bucket)?.count ?? 0), 0);
+  const previous = buckets.slice(Math.max(0, activeIndex - 7), Math.max(0, activeIndex - 3))
+    .reduce((sum, bucket) => sum + (cells.find((cell) => cell.topicId === topicId && cell.timeBucket === bucket)?.count ?? 0), 0);
+  if (previous === 0 && current === 0) return 0;
+  if (previous === 0) return 100;
+  return Math.round(((current - previous) / previous) * 100);
+}
+
 function filterByRange(items: PlatformHealthItem[], days: number, offsetDays: number) {
   const latest = items.reduce((max, item) => Math.max(max, Date.parse(item.createdAt)), 0);
   const end = latest - offsetDays * 24 * 60 * 60 * 1000;
@@ -425,6 +513,41 @@ function filterByRange(items: PlatformHealthItem[], days: number, offsetDays: nu
     const timestamp = Date.parse(item.createdAt);
     return timestamp >= start && timestamp <= end;
   });
+}
+
+function effectivePlatformForSource(source: AnalyticsFilterState['source']): PlatformHealthSelection {
+  return getPlatformFromSource(source) ?? 'both';
+}
+
+function getPlatformFromSource(source: AnalyticsFilterState['source']) {
+  if (source === 'google_play') return 'android';
+  if (source === 'app_store') return 'ios';
+  return undefined;
+}
+
+function matchesPlatformHealthFilters(
+  item: PlatformHealthItem,
+  filters: AnalyticsFilterState,
+) {
+  if (filters.source === 'support' && item.source !== 'support') return false;
+  if (filters.source === 'reviews' && item.source === 'support') return false;
+  if ((filters.source === 'google_play' || filters.source === 'app_store') && item.source !== filters.source) return false;
+  const platform = getPlatformFromSource(filters.source);
+  if (platform && !matchesPlatform(item, platform)) return false;
+  if (filters.severity !== 'all' && severityFor(item) !== filters.severity) return false;
+  if (filters.focusMode === 'project' && filters.focusId && !item.projectIds.includes(filters.focusId as PlatformProjectId)) return false;
+  if (filters.focusMode === 'topic' && filters.focusId && item.topicId !== filters.focusId) return false;
+  return true;
+}
+
+function topicsForFocus(filters: AnalyticsFilterState) {
+  if (filters.focusMode === 'project' && filters.focusId) {
+    return platformHealthTopics.filter((topic) => topic.projectIds.some((projectId) => projectId === filters.focusId));
+  }
+  if (filters.focusMode === 'topic' && filters.focusId) {
+    return platformHealthTopics.filter((topic) => topic.id === filters.focusId);
+  }
+  return platformHealthTopics;
 }
 
 function platformHeatColor(intensity: number) {
@@ -452,13 +575,20 @@ function formatBucket(bucket: string, granularity: PlatformHealthGranularity) {
   return new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric' }).format(new Date(`${bucket}T00:00:00`));
 }
 
+function formatBucketFull(bucket: string, granularity: PlatformHealthGranularity) {
+  if (granularity === 'month') {
+    return new Intl.DateTimeFormat('en', { month: 'long', year: 'numeric' }).format(new Date(`${bucket}-01T00:00:00`));
+  }
+  return `Week of ${new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric', year: 'numeric' }).format(new Date(`${bucket}T00:00:00`))}`;
+}
+
 function formatTrend(value: number) {
   if (value === 0) return '0%';
   return `${value > 0 ? '+' : ''}${value}%`;
 }
 
-function rangeLabelForAnalytics(range: DateRangeOption): '30d' | '90d' | '6m' {
-  if (range === '30') return '30d';
-  if (range === '90') return '90d';
-  return '6m';
+function daysForRange(range: AnalyticsFilterState['dateRange']) {
+  if (range === '30d') return 30;
+  if (range === '90d') return 90;
+  return 180;
 }
