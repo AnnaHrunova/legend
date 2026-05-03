@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { FeedbackButton } from './feedback/FeedbackButton';
+import { TesterProfileControl } from './tester/TesterProfileControl';
 import { currentUser } from '../data/mockUsers';
 import { applyTicketView } from '../domain/ticketViews';
 import { useTickets } from '../state/ticketStore';
@@ -135,6 +136,7 @@ export function AppLayout() {
             <Plus size={17} />
             Create ticket
           </button>
+          <TesterProfileControl />
           <div className="current-user" title={currentUser.email}>
             <span className="avatar">{currentUser.name.slice(0, 2).toUpperCase()}</span>
             <div>

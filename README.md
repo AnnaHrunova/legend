@@ -209,6 +209,41 @@ Why this architecture matters:
 
 Autocapture and automatic pageview tracking are disabled. Tracking is explicit only.
 
+## Tester Identification
+
+Tester identification is not authentication. There is no login, password, OAuth, backend, or access control.
+
+The prototype asks first-time users for a lightweight tester profile so PostHog events, contextual feedback, and session replay can be connected to the same tester during validation.
+
+Profile storage:
+
+- stored locally in `localStorage`
+- key: `legendDeskTesterProfile`
+- stable across reloads
+- no automatic expiration
+- can be reset from the top bar tester profile control
+
+Stored shape:
+
+```ts
+type TesterProfile = {
+  testerId: string;
+  name: string;
+  role?: string;
+  createdAt: string;
+  anonymous: boolean;
+};
+```
+
+The analytics wrapper enriches every `track()` event with tester context when a profile exists:
+
+- `testerId`
+- `testerName`
+- `testerRole`
+- `testerAnonymous`
+
+Feedback uses the same `track()` path, so `feedback_submitted` events receive tester context automatically.
+
 ## Event Model
 
 Events must be semantic. Do not add low-level UI noise such as `button_clicked`.
