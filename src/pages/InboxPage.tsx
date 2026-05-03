@@ -15,16 +15,25 @@ import {
 } from '../domain/ticketViews';
 import {
   PRIORITIES,
+  REVIEW_PLATFORMS,
+  REVIEW_RATING_RANGES,
+  REVIEW_SEVERITIES,
+  REVIEW_SOURCES,
   SLA_STATES,
   STATUSES,
   TEAMS,
   TICKET_COLUMNS,
   type Priority,
+  type ReviewPlatform,
+  type ReviewRatingRange,
+  type ReviewSeverity,
+  type ReviewSource,
   type SlaState,
   type Team,
   type Ticket,
   type TicketAssigneeFilter,
   type TicketColumnKey,
+  type TicketSource,
   type TicketSortOption,
   type TicketStatus,
   type TicketView,
@@ -82,6 +91,11 @@ export function InboxPage() {
   const [selected, setSelected] = useState<string[]>([]);
   const [bulkTag, setBulkTag] = useState('');
   const [editorMode, setEditorMode] = useState<'create' | 'edit' | null>(null);
+  const [sourceFilter, setSourceFilter] = useState<'all' | TicketSource>('all');
+  const [reviewSourceFilter, setReviewSourceFilter] = useState<'all' | ReviewSource>('all');
+  const [platformFilter, setPlatformFilter] = useState<'all' | ReviewPlatform>('all');
+  const [ratingFilter, setRatingFilter] = useState<'all' | ReviewRatingRange>('all');
+  const [severityFilter, setSeverityFilter] = useState<'all' | ReviewSeverity>('all');
 
   const view = viewId ? getView(viewId) : undefined;
 
@@ -105,8 +119,16 @@ export function InboxPage() {
 
   const visibleTickets = useMemo(() => {
     if (!view) return [];
-    return searchTickets(applyTicketView(tickets, view, currentUser.id), query);
-  }, [query, tickets, view]);
+    return searchTickets(applyTicketView(tickets, view, currentUser.id), query).filter((ticket) =>
+      matchesInboxFilters(ticket, {
+        source: sourceFilter,
+        reviewSource: reviewSourceFilter,
+        platform: platformFilter,
+        ratingRange: ratingFilter,
+        severity: severityFilter,
+      }),
+    );
+  }, [platformFilter, query, ratingFilter, reviewSourceFilter, severityFilter, sourceFilter, tickets, view]);
 
   const columns = ensureVisibleColumns(view?.visibleColumns ?? defaultTicketColumns);
   const chips = view ? getViewFilterChips(view) : [];
@@ -162,6 +184,25 @@ export function InboxPage() {
     if (queryLength > 0) {
       track('search_used', { queryLength });
     }
+  }
+
+  function updateTicketFilter<Key extends keyof InboxFilters>(key: Key, value: InboxFilters[Key]) {
+    const next = {
+      source: sourceFilter,
+      reviewSource: reviewSourceFilter,
+      platform: platformFilter,
+      ratingRange: ratingFilter,
+      severity: severityFilter,
+      [key]: value,
+    };
+
+    if (key === 'source') setSourceFilter(value as typeof sourceFilter);
+    if (key === 'reviewSource') setReviewSourceFilter(value as typeof reviewSourceFilter);
+    if (key === 'platform') setPlatformFilter(value as typeof platformFilter);
+    if (key === 'ratingRange') setRatingFilter(value as typeof ratingFilter);
+    if (key === 'severity') setSeverityFilter(value as typeof severityFilter);
+
+    track('tickets_filter_changed', filterPayload(next));
   }
 
   return (
@@ -242,6 +283,76 @@ export function InboxPage() {
             <strong>{tickets.length}</strong> total tickets
           </span>
         </div>
+      </div>
+
+      <div className="review-filter-row">
+        <label className="compact-label">
+          <span>Source</span>
+          <select
+            value={sourceFilter}
+            onChange={(event) => updateTicketFilter('source', event.target.value as InboxFilters['source'])}
+          >
+            <option value="all">All sources</option>
+            <option value="support">Support</option>
+            <option value="review">Reviews</option>
+          </select>
+        </label>
+        <label className="compact-label">
+          <span>Review source</span>
+          <select
+            value={reviewSourceFilter}
+            onChange={(event) => updateTicketFilter('reviewSource', event.target.value as InboxFilters['reviewSource'])}
+          >
+            <option value="all">All review sources</option>
+            {REVIEW_SOURCES.map((source) => (
+              <option key={source} value={source}>
+                {reviewSourceLabel(source)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="compact-label">
+          <span>Platform</span>
+          <select
+            value={platformFilter}
+            onChange={(event) => updateTicketFilter('platform', event.target.value as InboxFilters['platform'])}
+          >
+            <option value="all">All platforms</option>
+            {REVIEW_PLATFORMS.map((platform) => (
+              <option key={platform} value={platform}>
+                {platform === 'ios' ? 'iOS' : 'Android'}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="compact-label">
+          <span>Rating</span>
+          <select
+            value={ratingFilter}
+            onChange={(event) => updateTicketFilter('ratingRange', event.target.value as InboxFilters['ratingRange'])}
+          >
+            <option value="all">All ratings</option>
+            {REVIEW_RATING_RANGES.map((range) => (
+              <option key={range} value={range}>
+                {ratingRangeLabel(range)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="compact-label">
+          <span>Severity</span>
+          <select
+            value={severityFilter}
+            onChange={(event) => updateTicketFilter('severity', event.target.value as InboxFilters['severity'])}
+          >
+            <option value="all">All severities</option>
+            {REVIEW_SEVERITIES.map((severity) => (
+              <option key={severity} value={severity}>
+                {titleCase(severity)}
+              </option>
+            ))}
+          </select>
+        </label>
       </div>
 
       {selected.length > 0 && (
@@ -396,6 +507,7 @@ function TicketCell({ ticket, column }: { ticket: Ticket; column: TicketColumnKe
           {ticket.subject}
         </Link>
         <span>{ticket.id}</span>
+        {ticket.source === 'review' && <ReviewBadge ticket={ticket} />}
       </>
     );
   }
@@ -415,6 +527,70 @@ function TicketCell({ ticket, column }: { ticket: Ticket; column: TicketColumnKe
       ))}
     </div>
   );
+}
+
+type InboxFilters = {
+  source: 'all' | TicketSource;
+  reviewSource: 'all' | ReviewSource;
+  platform: 'all' | ReviewPlatform;
+  ratingRange: 'all' | ReviewRatingRange;
+  severity: 'all' | ReviewSeverity;
+};
+
+function matchesInboxFilters(ticket: Ticket, filters: InboxFilters) {
+  if (filters.source !== 'all' && ticket.source !== filters.source) return false;
+  if (filters.reviewSource !== 'all' && ticket.reviewSource !== filters.reviewSource) return false;
+  if (filters.platform !== 'all' && ticket.platform !== filters.platform) return false;
+  if (filters.ratingRange !== 'all' && !matchesRating(ticket.rating, filters.ratingRange)) return false;
+  if (filters.severity !== 'all' && reviewSeverity(ticket) !== filters.severity) return false;
+  return true;
+}
+
+function filterPayload(filters: InboxFilters) {
+  return {
+    ...(filters.source !== 'all' ? { source: filters.source } : {}),
+    ...(filters.reviewSource !== 'all' ? { reviewSource: filters.reviewSource } : {}),
+    ...(filters.platform !== 'all' ? { platform: filters.platform } : {}),
+    ...(filters.ratingRange !== 'all' ? { ratingRange: filters.ratingRange } : {}),
+    ...(filters.severity !== 'all' ? { severity: filters.severity } : {}),
+  };
+}
+
+function matchesRating(rating: number | undefined, range: ReviewRatingRange) {
+  if (!rating) return false;
+  if (range === '1-2') return rating <= 2;
+  if (range === '3') return rating === 3;
+  return rating >= 4;
+}
+
+function reviewSeverity(ticket: Ticket): ReviewSeverity | undefined {
+  if (!ticket.rating) return undefined;
+  if (ticket.rating <= 2) return 'critical';
+  if (ticket.rating === 3) return 'medium';
+  return 'low';
+}
+
+function ReviewBadge({ ticket }: { ticket: Ticket }) {
+  return (
+    <span className="review-badge">
+      <strong>★ {ticket.rating}</strong>
+      {reviewSourceLabel(ticket.reviewSource)} · {ticket.platform === 'ios' ? 'iOS' : 'Android'}
+    </span>
+  );
+}
+
+function reviewSourceLabel(source?: ReviewSource) {
+  return source === 'google_play' ? 'Google Play' : 'App Store';
+}
+
+function ratingRangeLabel(range: ReviewRatingRange) {
+  if (range === '1-2') return '1-2 stars';
+  if (range === '3') return '3 stars';
+  return '4-5 stars';
+}
+
+function titleCase(value: string) {
+  return value.replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
 function ViewEditor({

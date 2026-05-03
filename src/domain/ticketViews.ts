@@ -1,5 +1,7 @@
 import type {
   Priority,
+  ReviewRatingRange,
+  ReviewSource,
   SlaState,
   Ticket,
   TicketAssigneeFilter,
@@ -9,6 +11,7 @@ import type {
   TicketView,
   TicketViewFilters,
 } from './types';
+import { severityFromRating } from './types';
 
 const priorityWeight: Record<Priority, number> = {
   Urgent: 4,
@@ -50,6 +53,12 @@ export function matchesTicketView(
   if (filters.statuses?.length && !filters.statuses.includes(ticket.status)) return false;
   if (filters.priorities?.length && !filters.priorities.includes(ticket.priority)) return false;
   if (filters.teams?.length && !filters.teams.includes(ticket.team)) return false;
+  if (filters.sources?.length && !filters.sources.some((source) => source === ticket.source || ((source as string) === 'app_store' && ticket.source === 'review'))) return false;
+  if (filters.reviewSources?.length && (!ticket.reviewSource || !filters.reviewSources.includes(ticket.reviewSource))) return false;
+  if (filters.platforms?.length && (!ticket.platform || !filters.platforms.includes(ticket.platform))) return false;
+  if (filters.ratingRanges?.length && !matchesRatingRanges(ticket.rating, filters.ratingRanges)) return false;
+  const severity = severityFromRating(ticket.rating);
+  if (filters.severities?.length && (!severity || !filters.severities.includes(severity))) return false;
   if (filters.slaStates?.length && !filters.slaStates.includes(ticket.sla.state)) return false;
 
   if (filters.assignee && !matchesAssignee(ticket, filters.assignee, currentUserId)) return false;
@@ -81,6 +90,11 @@ export function getViewFilterChips(view: TicketView): string[] {
   if (filters.statuses?.length) chips.push(`Status: ${filters.statuses.join(', ')}`);
   if (filters.priorities?.length) chips.push(`Priority: ${filters.priorities.join(', ')}`);
   if (filters.teams?.length) chips.push(`Team: ${filters.teams.join(', ')}`);
+  if (filters.sources?.length) chips.push(`Source: ${filters.sources.join(', ')}`);
+  if (filters.reviewSources?.length) chips.push(`Review source: ${filters.reviewSources.map(reviewSourceLabel).join(', ')}`);
+  if (filters.platforms?.length) chips.push(`Platform: ${filters.platforms.join(', ')}`);
+  if (filters.ratingRanges?.length) chips.push(`Rating: ${filters.ratingRanges.join(', ')}`);
+  if (filters.severities?.length) chips.push(`Severity: ${filters.severities.join(', ')}`);
   if (filters.slaStates?.length) chips.push(`SLA: ${filters.slaStates.join(', ')}`);
   if (filters.tagContains) chips.push(`Tag contains: ${filters.tagContains}`);
   if (filters.companyIs) chips.push(`Company: ${filters.companyIs}`);
@@ -89,6 +103,19 @@ export function getViewFilterChips(view: TicketView): string[] {
   if (filters.updatedDateRange) chips.push(`Updated: ${dateRangeLabel(filters.updatedDateRange)}`);
 
   return chips;
+}
+
+function reviewSourceLabel(source: ReviewSource) {
+  return source === 'google_play' ? 'Google Play' : 'App Store';
+}
+
+function matchesRatingRanges(rating: number | undefined, ranges: ReviewRatingRange[]) {
+  if (!rating) return false;
+  return ranges.some((range) => {
+    if (range === '1-2') return rating <= 2;
+    if (range === '3') return rating === 3;
+    return rating >= 4;
+  });
 }
 
 export function searchTickets(tickets: Ticket[], query: string): Ticket[] {

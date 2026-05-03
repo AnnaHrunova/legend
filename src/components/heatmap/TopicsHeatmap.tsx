@@ -39,7 +39,7 @@ export function TopicsHeatmap({
         className="topics-heatmap refined"
         style={{ gridTemplateColumns: `240px repeat(${buckets.length}, minmax(52px, 1fr))` }}
       >
-        <div className="heatmap-corner">{groupingMode === 'project' ? 'Project' : 'Topic'}</div>
+        <div className="heatmap-corner">{groupingLabel(groupingMode)}</div>
         {buckets.map((bucket, index) => (
           <div
             key={bucket}
@@ -105,9 +105,7 @@ function HeatmapRowView({
       >
         <strong>{row.name}</strong>
         <span>
-          {row.kind === 'project'
-            ? `${row.topicIds.length} linked topics`
-            : row.projectIds.join(', ')}
+          {rowSubtitle(row)}
         </span>
       </button>
       {buckets.map((bucket, index) => {
@@ -153,12 +151,37 @@ function tooltipFor(
   growth: number,
   cell?: HeatmapCell,
 ) {
-  const label = row.kind === 'project' ? 'Project' : 'Topic';
+  const label = rowKindLabel(row.kind);
   const topTopics = cell?.topTopics.length
     ? `\nTop topics:\n${cell.topTopics.map((topic) => `- ${topic.name} (${topic.count})`).join('\n')}`
     : '';
 
   return `${label}: ${row.name}\n${granularity === 'month' ? 'Month' : 'Week'}: ${formatBucket(bucket, granularity)}\nTickets: ${count}\nGrowth: ${formatGrowth(growth)} vs previous${topTopics}`;
+}
+
+function groupingLabel(groupingMode: TopicGroupingMode) {
+  if (groupingMode === 'project') return 'Project';
+  if (groupingMode === 'source') return 'Source';
+  if (groupingMode === 'severity') return 'Severity';
+  return 'Topic';
+}
+
+function rowKindLabel(kind: HeatmapRow['kind']) {
+  if (kind === 'project') return 'Project';
+  if (kind === 'source') return 'Source';
+  if (kind === 'severity') return 'Severity';
+  return 'Topic';
+}
+
+function rowSubtitle(row: HeatmapRow) {
+  if (row.kind === 'project') return `${row.topicIds.length} linked topics`;
+  if (row.kind === 'source') {
+    if (row.source === 'google_play') return 'Android ratings and public reviews';
+    if (row.source === 'app_store') return 'iOS ratings and public reviews';
+    return 'Agent-managed support tickets';
+  }
+  if (row.kind === 'severity') return 'Derived from app store rating';
+  return row.projectIds.join(', ');
 }
 
 function formatGrowth(value: number) {

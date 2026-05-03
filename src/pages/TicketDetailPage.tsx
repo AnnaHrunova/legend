@@ -6,7 +6,16 @@ import { FeedbackButton } from '../components/feedback/FeedbackButton';
 import { formatDate } from '../components/format';
 import { macros } from '../data/mockMacros';
 import { agents, currentUser } from '../data/mockUsers';
-import { PRIORITIES, STATUSES, TEAMS, type Priority, type Team, type TicketStatus } from '../domain/types';
+import {
+  PRIORITIES,
+  STATUSES,
+  TEAMS,
+  severityFromRating,
+  type Priority,
+  type ReviewSource,
+  type Team,
+  type TicketStatus,
+} from '../domain/types';
 import { useTickets } from '../state/ticketStore';
 
 export function TicketDetailPage() {
@@ -14,6 +23,9 @@ export function TicketDetailPage() {
   const { getTicket, updateTicket, assignToCurrentUser, addInternalNote, addPublicReply } = useTickets();
   const ticket = ticketId ? getTicket(ticketId) : undefined;
   const [reply, setReply] = useState('');
+  const [reviewReply, setReviewReply] = useState('');
+  const [reviewReplyStarted, setReviewReplyStarted] = useState(false);
+  const [reviewReplySent, setReviewReplySent] = useState(false);
   const [note, setNote] = useState('');
   const [newTag, setNewTag] = useState('');
   const activeTicketId = ticket?.id;
@@ -31,8 +43,16 @@ export function TicketDetailPage() {
   useEffect(() => {
     if (activeTicketId) {
       track('view_opened', { view: 'ticket_detail' });
+      if (ticket?.source === 'review') {
+        track('review_opened', {
+          ticketId: activeTicketId,
+          ...(ticket.rating ? { rating: ticket.rating } : {}),
+          ...(ticket.reviewSource ? { reviewSource: ticket.reviewSource } : {}),
+          ...(ticket.platform ? { platform: ticket.platform } : {}),
+        });
+      }
     }
-  }, [activeTicketId]);
+  }, [activeTicketId, ticket?.platform, ticket?.rating, ticket?.reviewSource, ticket?.source]);
 
   if (!ticket) {
     return <Navigate to="/inbox" replace />;
@@ -152,6 +172,49 @@ export function TicketDetailPage() {
           <span>Updated {formatDate(ticket.updatedAt)}</span>
         </div>
 
+        {ticket.source === 'review' && (
+          <section className="review-context-card">
+            <div className="section-header">
+              <div>
+                <p className="eyebrow">Review context</p>
+                <h2>{reviewSourceLabel(ticket.reviewSource)} review</h2>
+              </div>
+              <FeedbackButton
+                context="review_ticket"
+                variant="icon"
+                ticketId={ticket.id}
+                source={ticket.source}
+                reviewSource={ticket.reviewSource}
+                severity={severityFromRating(ticket.rating)}
+                componentLabel="Review ticket"
+              />
+            </div>
+            <dl className="review-meta-grid">
+              <div>
+                <dt>Review source</dt>
+                <dd>{reviewSourceLabel(ticket.reviewSource)}</dd>
+              </div>
+              <div>
+                <dt>Rating</dt>
+                <dd>★ {ticket.rating}</dd>
+              </div>
+              <div>
+                <dt>Platform</dt>
+                <dd>{ticket.platform === 'ios' ? 'iOS' : 'Android'}</dd>
+              </div>
+              <div>
+                <dt>App version</dt>
+                <dd>{ticket.appVersion}</dd>
+              </div>
+              <div>
+                <dt>Severity</dt>
+                <dd>{severityFromRating(ticket.rating)}</dd>
+              </div>
+            </dl>
+            <blockquote>{ticket.description}</blockquote>
+          </section>
+        )}
+
         <section className="conversation-panel">
           <div className="section-header">
             <h2>Conversation</h2>
@@ -181,6 +244,55 @@ export function TicketDetailPage() {
         </section>
 
         <section className="reply-grid">
+          {ticket.source === 'review' && (
+            <div className="composer review-reply-composer">
+              <div className="section-header">
+                <div className="section-title-row">
+                  <h2>Reply to review</h2>
+                  <FeedbackButton
+                    context="review_reply_box"
+                    variant="icon"
+                    ticketId={ticket.id}
+                    source={ticket.source}
+                    reviewSource={ticket.reviewSource}
+                    severity={severityFromRating(ticket.rating)}
+                    componentLabel="Review reply box"
+                  />
+                </div>
+                {reviewReplySent && <span className="mock-sent-state">Reply sent (mock)</span>}
+              </div>
+              <textarea
+                value={reviewReply}
+                onFocus={() => {
+                  if (reviewReplyStarted) return;
+                  setReviewReplyStarted(true);
+                  track('review_reply_started', {
+                    ticketId: ticket.id,
+                    ...(ticket.reviewSource ? { reviewSource: ticket.reviewSource } : {}),
+                  });
+                }}
+                onChange={(event) => setReviewReply(event.target.value)}
+                placeholder="Write a public app store reply..."
+              />
+              <button
+                className="primary-button"
+                disabled={!reviewReply.trim()}
+                onClick={() => {
+                  const text = reviewReply.trim();
+                  updateTicket(ticket.id, {}, 'Replied to app store review (mock)');
+                  track('review_reply_submitted', {
+                    ticketId: ticket.id,
+                    ...(ticket.reviewSource ? { reviewSource: ticket.reviewSource } : {}),
+                    textLength: text.length,
+                  });
+                  setReviewReply('');
+                  setReviewReplySent(true);
+                }}
+              >
+                Send review reply
+              </button>
+            </div>
+          )}
           <div className="composer">
             <div className="section-header">
               <div className="section-title-row">
@@ -445,4 +557,8 @@ function MacroSelector({
         ))}
     </select>
   );
+}
+
+function reviewSourceLabel(source?: ReviewSource) {
+  return source === 'google_play' ? 'Google Play' : 'App Store';
 }

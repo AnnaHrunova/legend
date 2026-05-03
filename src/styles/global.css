@@ -616,6 +616,16 @@ a {
   align-items: end;
 }
 
+.review-filter-row {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(140px, 1fr));
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
 .view-toolbar {
   grid-template-columns: minmax(260px, 1fr) auto;
   align-items: center;
@@ -765,6 +775,21 @@ textarea:focus {
   margin-top: 3px;
   color: var(--text-muted);
   font-size: 12px;
+}
+
+.review-badge {
+  width: fit-content;
+  display: inline-flex !important;
+  align-items: center;
+  gap: 6px;
+  margin-top: 7px !important;
+  padding: 4px 8px;
+  border: 1px solid #dbe7f2;
+  border-radius: 999px;
+  background: #f7fafc;
+  color: #42526a !important;
+  font-size: 11px !important;
+  font-weight: 850;
 }
 
 .badge {
@@ -974,6 +999,59 @@ textarea:focus {
 
 .note-composer {
   background: #fffdf4;
+}
+
+.review-context-card,
+.review-reply-composer {
+  border-color: #d7e7f4;
+  background: #f8fbff;
+}
+
+.review-context-card {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid #d7e7f4;
+  border-radius: 8px;
+}
+
+.review-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.review-meta-grid dt {
+  display: block;
+  color: #66758a;
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.review-meta-grid dd {
+  display: block;
+  margin-top: 3px;
+  margin-left: 0;
+  color: #172033;
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.review-context-card blockquote {
+  margin: 0;
+  padding: 12px;
+  border-left: 3px solid #75a7d8;
+  border-radius: 7px;
+  background: #ffffff;
+  color: #46566c;
+  line-height: 1.5;
+}
+
+.mock-sent-state {
+  color: #0f766e;
+  font-size: 12px;
+  font-weight: 850;
 }
 
 .ticket-side-panel,
@@ -1724,6 +1802,17 @@ textarea:focus {
   flex-wrap: wrap;
 }
 
+.topics-filter-strip {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(130px, 1fr));
+  gap: 10px;
+  margin: 0 0 14px;
+  padding: 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #f8fafc;
+}
+
 .topics-sort-label {
   min-width: 190px;
   display: grid;
@@ -2143,6 +2232,9 @@ textarea:focus {
   .view-meta-row,
   .topics-control-panel,
   .topics-summary-grid,
+  .topics-filter-strip,
+  .review-filter-row,
+  .review-meta-grid,
   .topics-kpi-grid,
   .topic-detail-stats {
     grid-template-columns: 1fr;

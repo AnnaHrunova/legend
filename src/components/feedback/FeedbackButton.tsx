@@ -12,6 +12,9 @@ type FeedbackButtonProps = {
   topicId?: string;
   projectId?: string;
   timeBucket?: string;
+  source?: string;
+  reviewSource?: string;
+  severity?: string;
   componentLabel?: string;
 };
 
@@ -26,6 +29,9 @@ export function FeedbackButton({
   topicId,
   projectId,
   timeBucket,
+  source,
+  reviewSource,
+  severity,
   componentLabel,
 }: FeedbackButtonProps) {
   const [isOpen, setIsOpen] = useState(false);
@@ -73,6 +79,9 @@ export function FeedbackButton({
       ...(topicId ? { topicId } : {}),
       ...(projectId ? { projectId } : {}),
       ...(timeBucket ? { timeBucket } : {}),
+      ...(source ? { source } : {}),
+      ...(reviewSource ? { reviewSource } : {}),
+      ...(severity ? { severity } : {}),
     });
 
     setText('');

@@ -1,6 +1,16 @@
 import { agents } from './mockUsers';
 import { customers } from './mockCustomers';
-import type { Priority, SlaState, Team, Ticket, TicketStatus } from '../domain/types';
+import { topics } from '../analytics/topics/domain';
+import type {
+  Priority,
+  ReviewPlatform,
+  ReviewRating,
+  ReviewSource,
+  SlaState,
+  Team,
+  Ticket,
+  TicketStatus,
+} from '../domain/types';
 
 const subjects = [
   'Cannot access invoice history',
@@ -54,6 +64,47 @@ const tagPool = [
   'urgent-customer',
 ];
 
+const reviewSubjects = [
+  "App crashes when I try to pay",
+  'Refund not received for eSIM',
+  'Notifications not working',
+  'Login keeps failing',
+  'Savings balance shows zero',
+  'Card keeps getting declined',
+  'Cannot install eSIM on iPhone',
+  'Transaction disappeared from history',
+  'Verification has been stuck for days',
+  'Great app but reports load slowly',
+  'Payment alerts are delayed',
+  'Physical card tracking is missing',
+];
+
+const reviewDescriptions = [
+  'The app crashes right after I confirm a payment. I tried twice and still cannot complete it.',
+  'I bought an eSIM that never worked and the refund still has not arrived.',
+  'Push notifications stopped working after the latest update.',
+  'Every login asks for a code and then sends me back to the start.',
+  'My savings balance suddenly shows zero even though the money is still in transaction history.',
+  'Card was declined at the store despite enough balance.',
+  'The eSIM setup screen hangs after scanning the QR code.',
+  'A transaction that was pending yesterday is now missing from the app.',
+  'Verification has been under review for days with no update.',
+  'Useful app overall, but reports and transaction history are too slow.',
+  'Payment alerts arrive much later than the actual charge.',
+  'I ordered a replacement card and cannot find delivery tracking.',
+];
+
+const reviewUsers = [
+  'maria_82',
+  'payrunner',
+  'ios_user_17',
+  'android_nomad',
+  'traveller_kyiv',
+  'budgetpilot',
+  'cardholder77',
+  'esimfan',
+];
+
 const statuses: TicketStatus[] = [
   'New',
   'Open',
@@ -90,11 +141,33 @@ function ticketTeam(subject: string, index: number): Team {
   return teams[index % teams.length];
 }
 
-export const mockTickets: Ticket[] = Array.from({ length: 56 }, (_, offset) => {
+function topicForSubject(subject: string) {
+  if (/esim.*refund|refund.*esim/i.test(subject)) return topics.find((topic) => topic.id === 'esim-refund')!;
+  if (/esim|qr|activation/i.test(subject)) return topics.find((topic) => topic.id === 'esim-installation')!;
+  if (/saving|balance|interest/i.test(subject)) return topics.find((topic) => topic.id === 'savings-balance')!;
+  if (/notification|alert/i.test(subject)) return topics.find((topic) => topic.id === 'push-notifications')!;
+  if (/payment|transfer|pay/i.test(subject)) return topics.find((topic) => topic.id === 'payment-failed')!;
+  if (/card.*declin|declined/i.test(subject)) return topics.find((topic) => topic.id === 'card-declined')!;
+  if (/login|password|sso|auth/i.test(subject)) return topics.find((topic) => topic.id === 'login-issues')!;
+  if (/locked/i.test(subject)) return topics.find((topic) => topic.id === 'account-locked')!;
+  if (/transaction|history/i.test(subject)) return topics.find((topic) => topic.id === 'transaction-missing')!;
+  if (/verification|compliance|kyc/i.test(subject)) return topics.find((topic) => topic.id === 'verification-stuck')!;
+  if (/slow|crash|stuck|mobile/i.test(subject)) return topics.find((topic) => topic.id === 'app-performance')!;
+  if (/report|export/i.test(subject)) return topics.find((topic) => topic.id === 'report-export')!;
+  if (/document|pdf|attachment/i.test(subject)) return topics.find((topic) => topic.id === 'documents-missing')!;
+  return topics[indexSafe(subject) % topics.length] ?? topics[0]!;
+}
+
+function indexSafe(value: string) {
+  return value.split('').reduce((sum, letter) => sum + letter.charCodeAt(0), 0);
+}
+
+const supportTickets: Ticket[] = Array.from({ length: 56 }, (_, offset) => {
   const index = offset + 1;
   const subject = subjects[offset % subjects.length];
   const customer = customers[offset % customers.length];
   const team = ticketTeam(subject, offset);
+  const topic = topicForSubject(subject);
   const assignee = offset % 6 === 0 ? null : agents[(offset + 1) % agents.length];
   const priority = priorities[(offset + (offset % 4 === 0 ? 2 : 0)) % priorities.length];
   const status = statuses[offset % statuses.length];
@@ -122,6 +195,9 @@ export const mockTickets: Ticket[] = Array.from({ length: 56 }, (_, offset) => {
     tags: ticketTags(offset),
     createdAt,
     updatedAt,
+    topicId: topic.id,
+    projectIds: topic.projectIds,
+    source: 'support',
     sla: {
       state: slaStates[(offset + (priority === 'Urgent' ? 2 : 0)) % slaStates.length],
       firstResponseDueAt: iso(offset % 3, 2),
@@ -173,3 +249,91 @@ export const mockTickets: Ticket[] = Array.from({ length: 56 }, (_, offset) => {
     ],
   };
 });
+
+const appVersions = ['2.3.1', '2.3.2', '2.4.0', '2.4.1', '2.5.0'];
+
+const reviewTickets: Ticket[] = Array.from({ length: 28 }, (_, offset) => {
+  const index = offset + 1;
+  const subject = reviewSubjects[offset % reviewSubjects.length];
+  const topic = topicForSubject(subject);
+  const reviewSource: ReviewSource = offset % 2 === 0 ? 'app_store' : 'google_play';
+  const platform: ReviewPlatform = reviewSource === 'app_store' ? 'ios' : 'android';
+  const rating = ratingForTopic(topic.id, offset);
+  const createdAt = iso((offset % 32) + 1, offset % 9);
+  const updatedAt = iso(offset % 12, (offset % 5) - 2);
+  const id = `REV-${String(2000 + index).padStart(4, '0')}`;
+  const team = topic.projectIds.includes('payments')
+    ? 'Billing'
+    : topic.projectIds.includes('compliance')
+      ? 'Compliance'
+      : 'Product Support';
+  const assignee = offset % 4 === 0 ? null : agents[(offset + 2) % agents.length];
+  const customer = customers[offset % customers.length];
+  const userName = reviewUsers[offset % reviewUsers.length];
+
+  return {
+    id,
+    subject,
+    description: reviewDescriptions[offset % reviewDescriptions.length],
+    customerId: customer.id,
+    customerName: userName,
+    customerEmail: `${userName}@app-store.example`,
+    company: platform === 'ios' ? 'Apple App Store' : 'Google Play',
+    priority: rating <= 2 ? 'High' : rating === 3 ? 'Normal' : 'Low',
+    status: offset % 5 === 0 ? 'New' : statuses[(offset + 1) % statuses.length],
+    assigneeId: assignee?.id ?? null,
+    assigneeName: assignee?.name ?? 'Unassigned',
+    team,
+    tags: ['review', reviewSource, platform, topic.id, ...(rating <= 2 ? ['low-rating'] : [])],
+    createdAt,
+    updatedAt,
+    topicId: topic.id,
+    projectIds: topic.projectIds,
+    source: 'review',
+    reviewSource,
+    platform,
+    rating,
+    appVersion: appVersions[offset % appVersions.length],
+    userName,
+    sla: {
+      state: rating <= 2 ? 'At risk' : rating === 3 ? 'Due soon' : 'Healthy',
+      firstResponseDueAt: iso(offset % 3, 2),
+      resolutionDueAt: iso(-((offset % 5) + 1), 4),
+    },
+    messages: [
+      {
+        id: `${id}-msg-1`,
+        kind: 'customer',
+        authorName: userName,
+        authorRole: 'Customer',
+        body: reviewDescriptions[offset % reviewDescriptions.length],
+        createdAt,
+      },
+    ],
+    activity: [
+      {
+        id: `${id}-act-1`,
+        actorName: 'System',
+        action: `Review imported from ${reviewSource === 'app_store' ? 'App Store' : 'Google Play'}`,
+        createdAt,
+      },
+    ],
+  };
+});
+
+function ratingForTopic(topicId: string, offset: number): ReviewRating {
+  if (['payment-failed', 'card-declined', 'app-performance', 'login-issues'].includes(topicId)) {
+    return ([1, 2, 2, 3] as ReviewRating[])[offset % 4];
+  }
+  if (['esim-refund', 'esim-installation', 'transaction-missing'].includes(topicId)) {
+    return ([1, 2, 3, 2] as ReviewRating[])[offset % 4];
+  }
+  if (['push-notifications', 'savings-balance', 'report-export'].includes(topicId)) {
+    return ([2, 3, 4, 3] as ReviewRating[])[offset % 4];
+  }
+  return ([3, 4, 5, 4] as ReviewRating[])[offset % 4];
+}
+
+export const mockTickets: Ticket[] = [...supportTickets, ...reviewTickets].sort(
+  (a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt),
+);

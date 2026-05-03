@@ -18,6 +18,8 @@ export type FeedbackContext =
   | 'ticket_macros'
   | 'ticket_activity_timeline'
   | 'ticket_sla'
+  | 'review_ticket'
+  | 'review_reply_box'
   | 'create_ticket_form'
   | 'customers_list'
   | 'customer_profile'

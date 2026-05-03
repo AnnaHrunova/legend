@@ -1,4 +1,4 @@
-import type { Priority, TicketStatus } from '../../domain/types';
+import type { Priority, ReviewPlatform, ReviewRating, ReviewSource, TicketSource, TicketStatus } from '../../domain/types';
 import { topics, type ProjectId } from './domain';
 
 export type TopicAnalyticsTicket = {
@@ -8,6 +8,12 @@ export type TopicAnalyticsTicket = {
   createdAt: string;
   topicId: string;
   projectIds: ProjectId[];
+  source: TicketSource;
+  reviewSource?: ReviewSource;
+  platform?: ReviewPlatform;
+  rating?: ReviewRating;
+  appVersion?: string;
+  userName?: string;
   status: TicketStatus;
   priority: Priority;
 };
@@ -230,6 +236,8 @@ const templates: Record<string, TicketTemplate> = {
 
 const statuses: TicketStatus[] = ['New', 'Open', 'Pending', 'Waiting on customer', 'Escalated', 'Solved'];
 const priorities: Priority[] = ['Low', 'Normal', 'High', 'Urgent'];
+const versions = ['2.2.0', '2.2.4', '2.3.0', '2.3.1', '2.4.0', '2.4.2'];
+const reviewUsers = ['Marta L.', 'James P.', 'Aiko T.', 'Ivan S.', 'Noah R.', 'Sofia M.', 'Daniel W.', 'Priya K.'];
 
 export function generateTopicAnalyticsTickets(): TopicAnalyticsTicket[] {
   const random = seededRandom(186);
@@ -249,16 +257,29 @@ export function generateTopicAnalyticsTickets(): TopicAnalyticsTicket[] {
       const template = templates[topic.id];
       const createdAt = new Date(date);
       createdAt.setHours(Math.floor(random() * 24), Math.floor(random() * 60), 0, 0);
+      const source = pickSource(topic.id, monthIndex, day, random);
+      const reviewSource = source === 'review' ? pickReviewSource(topic.id, random) : undefined;
+      const rating = source === 'review' ? pickRating(topic.id, random) : undefined;
+      const platform = reviewSource ? platformForReviewSource(reviewSource) : undefined;
 
       tickets.push({
-        id: `PAY-${ticketNumber}`,
-        subject: pick(template.subjects, random),
-        description: pick(template.descriptions, random),
+        id: source === 'review' ? `REV-${ticketNumber}` : `PAY-${ticketNumber}`,
+        subject: source === 'review'
+          ? reviewSubject(topic.id, template, random)
+          : pick(template.subjects, random),
+        description: source === 'review'
+          ? reviewDescription(topic.id, template, rating ?? 3, random)
+          : pick(template.descriptions, random),
         createdAt: createdAt.toISOString(),
         topicId: topic.id,
         projectIds: topic.projectIds,
+        source,
+        ...(reviewSource ? { reviewSource } : {}),
+        ...(platform ? { platform } : {}),
+        ...(rating ? { rating } : {}),
+        ...(source === 'review' ? { appVersion: pick(versions, random), userName: pick(reviewUsers, random) } : {}),
         status: weightedPick(statuses, [0.12, 0.28, 0.16, 0.1, 0.07, 0.27], random),
-        priority: weightedPick(priorities, priorityWeights(topic.id), random),
+        priority: source === 'review' && rating ? priorityFromRating(rating) : weightedPick(priorities, priorityWeights(topic.id), random),
       });
 
       ticketNumber += 1;
@@ -266,6 +287,78 @@ export function generateTopicAnalyticsTickets(): TopicAnalyticsTicket[] {
   }
 
   return tickets;
+}
+
+function pickSource(topicId: string, monthIndex: number, day: number, random: () => number): TicketSource {
+  const reviewHeavyTopics = ['app-performance', 'payment-failed', 'card-declined', 'push-notifications', 'login-issues', 'esim-refund'];
+  const releaseSpike = Math.exp(-Math.pow(day - 122, 2) / 130);
+  const notificationSpike = topicId === 'push-notifications' && Math.sin(day / 9) > 0.82 ? 0.18 : 0;
+  const laterRefundPressure = topicId === 'esim-refund' ? Math.max(0, monthIndex - 3) * 0.04 : 0;
+  const base = reviewHeavyTopics.includes(topicId) ? 0.4 : 0.27;
+  const probability = Math.min(0.58, base + releaseSpike * 0.12 + notificationSpike + laterRefundPressure);
+  return random() < probability ? 'review' : 'support';
+}
+
+function pickReviewSource(topicId: string, random: () => number): ReviewSource {
+  const androidHeavy = ['app-performance', 'push-notifications', 'payment-failed'];
+  const googlePlayProbability = androidHeavy.includes(topicId) ? 0.58 : 0.48;
+  return random() < googlePlayProbability ? 'google_play' : 'app_store';
+}
+
+function platformForReviewSource(reviewSource: ReviewSource): ReviewPlatform {
+  return reviewSource === 'google_play' ? 'android' : 'ios';
+}
+
+function pickRating(topicId: string, random: () => number): ReviewRating {
+  if (['payment-failed', 'card-declined', 'app-performance', 'login-issues', 'account-locked'].includes(topicId)) {
+    return weightedPick([1, 2, 3, 4, 5] as ReviewRating[], [0.32, 0.34, 0.2, 0.1, 0.04], random);
+  }
+
+  if (['push-notifications', 'esim-installation', 'esim-refund', 'transaction-missing'].includes(topicId)) {
+    return weightedPick([1, 2, 3, 4, 5] as ReviewRating[], [0.22, 0.34, 0.25, 0.14, 0.05], random);
+  }
+
+  if (['verification-stuck', 'documents-missing', 'personal-data-update'].includes(topicId)) {
+    return weightedPick([1, 2, 3, 4, 5] as ReviewRating[], [0.14, 0.24, 0.36, 0.18, 0.08], random);
+  }
+
+  return weightedPick([1, 2, 3, 4, 5] as ReviewRating[], [0.07, 0.14, 0.28, 0.34, 0.17], random);
+}
+
+function priorityFromRating(rating: ReviewRating): Priority {
+  if (rating <= 2) return 'Urgent';
+  if (rating === 3) return 'High';
+  return 'Normal';
+}
+
+function reviewSubject(topicId: string, template: TicketTemplate, random: () => number) {
+  const overrides: Record<string, string[]> = {
+    'app-performance': ['App crashes when I try to pay', 'App freezes on the transactions screen'],
+    'payment-failed': ['Payment fails every time after confirmation', 'Money reserved but payment failed'],
+    'esim-refund': ['Refund not received for unused eSIM', 'Still waiting for eSIM refund'],
+    'push-notifications': ['Notifications are not working after update', 'No push alerts for payments'],
+    'login-issues': ['Login keeps failing with OTP', 'Cannot get into my account'],
+    'savings-balance': ['Savings balance shows zero in the app', 'Savings balance not updating'],
+  };
+
+  return pick(overrides[topicId] ?? template.subjects, random);
+}
+
+function reviewDescription(topicId: string, template: TicketTemplate, rating: ReviewRating, random: () => number) {
+  const base = pick(template.descriptions, random);
+  if (rating <= 2) {
+    return `${base} This is blocking me and the app store review was left with a low rating.`;
+  }
+
+  if (rating === 3) {
+    return `${base} The reviewer says the feature works sometimes but still needs attention.`;
+  }
+
+  if (topicId === 'savings-balance' || topicId === 'report-export') {
+    return `${base} The reviewer likes the app overall but wants this fixed or improved.`;
+  }
+
+  return `${base} The reviewer reports a minor issue while continuing to use the app.`;
 }
 
 function pickTopic(monthIndex: number, day: number, random: () => number) {

@@ -12,6 +12,13 @@ export type Priority = 'Low' | 'Normal' | 'High' | 'Urgent';
 export type Team = 'Billing' | 'Technical Support' | 'Compliance' | 'Product Support';
 
 export type SlaState = 'Healthy' | 'Due soon' | 'At risk' | 'Breached';
+export type TicketSource = 'support' | 'review';
+export type ReviewSource = 'google_play' | 'app_store';
+export type AnalyticsTicketSource = 'support' | ReviewSource;
+export type ReviewPlatform = 'android' | 'ios';
+export type ReviewRating = 1 | 2 | 3 | 4 | 5;
+export type ReviewSeverity = 'critical' | 'medium' | 'low';
+export type ReviewRatingRange = '1-2' | '3' | '4-5';
 
 export type TicketSortOption = 'newest' | 'oldest' | 'priority' | 'sla' | 'recently-updated';
 
@@ -46,6 +53,11 @@ export interface TicketViewFilters {
   priorities?: Priority[];
   assignee?: TicketAssigneeFilter;
   teams?: Team[];
+  sources?: TicketSource[];
+  reviewSources?: ReviewSource[];
+  platforms?: ReviewPlatform[];
+  ratingRanges?: ReviewRatingRange[];
+  severities?: ReviewSeverity[];
   tagContains?: string;
   companyIs?: string;
   slaStates?: SlaState[];
@@ -114,6 +126,14 @@ export interface Ticket {
   tags: string[];
   createdAt: string;
   updatedAt: string;
+  topicId: string;
+  projectIds: string[];
+  source: TicketSource;
+  reviewSource?: ReviewSource;
+  platform?: ReviewPlatform;
+  rating?: ReviewRating;
+  appVersion?: string;
+  userName?: string;
   sla: {
     state: SlaState;
     firstResponseDueAt: string;
@@ -155,6 +175,18 @@ export const PRIORITIES: Priority[] = ['Low', 'Normal', 'High', 'Urgent'];
 export const TEAMS: Team[] = ['Billing', 'Technical Support', 'Compliance', 'Product Support'];
 
 export const SLA_STATES: SlaState[] = ['Healthy', 'Due soon', 'At risk', 'Breached'];
+export const TICKET_SOURCES: TicketSource[] = ['support', 'review'];
+export const REVIEW_SOURCES: ReviewSource[] = ['google_play', 'app_store'];
+export const REVIEW_PLATFORMS: ReviewPlatform[] = ['android', 'ios'];
+export const REVIEW_RATING_RANGES: ReviewRatingRange[] = ['1-2', '3', '4-5'];
+export const REVIEW_SEVERITIES: ReviewSeverity[] = ['critical', 'medium', 'low'];
+
+export function severityFromRating(rating?: ReviewRating): ReviewSeverity | undefined {
+  if (!rating) return undefined;
+  if (rating <= 2) return 'critical';
+  if (rating === 3) return 'medium';
+  return 'low';
+}
 
 export const TICKET_COLUMNS: { key: TicketColumnKey; label: string }[] = [
   { key: 'id', label: 'Ticket ID' },
