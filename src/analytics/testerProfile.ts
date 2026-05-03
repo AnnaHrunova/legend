@@ -2,25 +2,25 @@ export const TESTER_PROFILE_STORAGE_KEY = 'legendDeskTesterProfile';
 
 export type TesterProfile = {
   testerId: string;
-  name: string;
-  role?: string;
+  fullName: string;
+  email: string;
+  role: string;
   createdAt: string;
-  anonymous: boolean;
 };
 
 type TesterProfileInput = {
-  name: string;
-  role?: string;
-  anonymous: boolean;
+  fullName: string;
+  email: string;
+  role: string;
 };
 
-export function createTesterProfile({ name, role, anonymous }: TesterProfileInput): TesterProfile {
+export function createTesterProfile({ fullName, email, role }: TesterProfileInput): TesterProfile {
   return {
     testerId: generateTesterId(),
-    name,
-    ...(role?.trim() ? { role: role.trim() } : {}),
+    fullName: fullName.trim(),
+    email: email.trim(),
+    role: role.trim(),
     createdAt: new Date().toISOString(),
-    anonymous,
   };
 }
 
@@ -29,15 +29,15 @@ export function getTesterProfile(): TesterProfile | undefined {
     const stored = window.localStorage.getItem(TESTER_PROFILE_STORAGE_KEY);
     if (!stored) return undefined;
     const parsed = JSON.parse(stored) as Partial<TesterProfile>;
-    if (!parsed.testerId || !parsed.name || !parsed.createdAt || typeof parsed.anonymous !== 'boolean') {
+    if (!parsed.testerId || !parsed.fullName || !parsed.email || !parsed.role || !parsed.createdAt) {
       return undefined;
     }
     return {
       testerId: parsed.testerId,
-      name: parsed.name,
-      ...(parsed.role ? { role: parsed.role } : {}),
+      fullName: parsed.fullName,
+      email: parsed.email,
+      role: parsed.role,
       createdAt: parsed.createdAt,
-      anonymous: parsed.anonymous,
     };
   } catch {
     return undefined;
@@ -58,9 +58,9 @@ export function testerAnalyticsProperties(profile?: TesterProfile): Record<strin
   if (!profile) return {};
   return {
     testerId: profile.testerId,
-    testerName: profile.name,
-    ...(profile.role ? { testerRole: profile.role } : {}),
-    testerAnonymous: profile.anonymous,
+    testerName: profile.fullName,
+    testerEmail: profile.email,
+    testerRole: profile.role,
   };
 }
 

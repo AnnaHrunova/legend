@@ -215,6 +215,12 @@ Tester identification is not authentication. There is no login, password, OAuth,
 
 The prototype asks first-time users for a lightweight tester profile so PostHog events, contextual feedback, and session replay can be connected to the same tester during validation.
 
+Required fields:
+
+- full name
+- email
+- role / team
+
 Profile storage:
 
 - stored locally in `localStorage`
@@ -228,10 +234,10 @@ Stored shape:
 ```ts
 type TesterProfile = {
   testerId: string;
-  name: string;
-  role?: string;
+  fullName: string;
+  email: string;
+  role: string;
   createdAt: string;
-  anonymous: boolean;
 };
 ```
 
@@ -239,8 +245,8 @@ The analytics wrapper enriches every `track()` event with tester context when a 
 
 - `testerId`
 - `testerName`
+- `testerEmail`
 - `testerRole`
-- `testerAnonymous`
 
 Feedback uses the same `track()` path, so `feedback_submitted` events receive tester context automatically.
 

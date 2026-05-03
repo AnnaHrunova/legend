@@ -10,6 +10,12 @@ import {
 
 const roleOptions = ['Support', 'Product', 'Engineering', 'Operations', 'QA', 'Manager'];
 
+type TesterProfileFormValue = {
+  fullName: string;
+  email: string;
+  role: string;
+};
+
 export function TesterProfileControl() {
   const [profile, setProfile] = useState<TesterProfile | undefined>(() => getTesterProfile());
   const [modalMode, setModalMode] = useState<'create' | 'edit' | undefined>(() => (getTesterProfile() ? undefined : 'create'));
@@ -23,45 +29,32 @@ export function TesterProfileControl() {
   useEffect(() => {
     const storedProfile = getTesterProfile();
     if (!storedProfile) return;
-    identify(storedProfile.testerId, {
-      name: storedProfile.name,
-      ...(storedProfile.role ? { role: storedProfile.role } : {}),
-      anonymous: storedProfile.anonymous,
-    });
+    identifyTester(storedProfile);
   }, []);
 
   function persistProfile(nextProfile: TesterProfile, eventName: 'tester_profile_created' | 'tester_profile_updated') {
     saveTesterProfile(nextProfile);
     setProfile(nextProfile);
     setModalMode(undefined);
-    identify(nextProfile.testerId, {
-      name: nextProfile.name,
-      ...(nextProfile.role ? { role: nextProfile.role } : {}),
-      anonymous: nextProfile.anonymous,
-    });
+    identifyTester(nextProfile);
     track(eventName, {
       testerId: nextProfile.testerId,
-      anonymous: nextProfile.anonymous,
-      ...(nextProfile.role ? { role: nextProfile.role } : {}),
+      role: nextProfile.role,
     });
   }
 
-  function createNamedProfile(name: string, role?: string) {
-    persistProfile(createTesterProfile({ name, role, anonymous: false }), 'tester_profile_created');
+  function createProfile(value: TesterProfileFormValue) {
+    persistProfile(createTesterProfile(value), 'tester_profile_created');
   }
 
-  function continueAnonymously() {
-    persistProfile(createTesterProfile({ name: 'Anonymous tester', anonymous: true }), 'tester_profile_created');
-  }
-
-  function updateProfile(name: string, role?: string) {
+  function updateProfile(value: TesterProfileFormValue) {
     if (!profile) return;
     persistProfile(
       {
         ...profile,
-        name,
-        ...(role?.trim() ? { role: role.trim() } : { role: undefined }),
-        anonymous: false,
+        fullName: value.fullName.trim(),
+        email: value.email.trim(),
+        role: value.role.trim(),
       },
       'tester_profile_updated',
     );
@@ -79,17 +72,16 @@ export function TesterProfileControl() {
   return (
     <>
       {profile && (
-        <button type="button" className="tester-profile-trigger" onClick={() => setModalMode('edit')}>
+        <button type="button" className="tester-profile-trigger" onClick={() => setModalMode('edit')} title={profile.email}>
           <span>Testing as</span>
-          <strong>{profile.name}</strong>
+          <strong>{profile.fullName}</strong>
         </button>
       )}
       {modalMode && (
         <TesterProfileModal
           mode={modalMode}
           profile={profile}
-          onSubmit={modalMode === 'create' ? createNamedProfile : updateProfile}
-          onAnonymous={continueAnonymously}
+          onSubmit={modalMode === 'create' ? createProfile : updateProfile}
           onCancel={modalMode === 'edit' ? () => setModalMode(undefined) : undefined}
           onReset={modalMode === 'edit' ? resetProfile : undefined}
         />
@@ -101,8 +93,7 @@ export function TesterProfileControl() {
 type TesterProfileModalProps = {
   mode: 'create' | 'edit';
   profile?: TesterProfile;
-  onSubmit: (name: string, role?: string) => void;
-  onAnonymous: () => void;
+  onSubmit: (value: TesterProfileFormValue) => void;
   onCancel?: () => void;
   onReset?: () => void;
 };
@@ -111,21 +102,31 @@ function TesterProfileModal({
   mode,
   profile,
   onSubmit,
-  onAnonymous,
   onCancel,
   onReset,
 }: TesterProfileModalProps) {
-  const [name, setName] = useState(profile?.anonymous ? '' : profile?.name ?? '');
-  const [role, setRole] = useState(profile?.role ?? '');
-  const [showError, setShowError] = useState(false);
+  const [fullName, setFullName] = useState(profile?.fullName ?? '');
+  const [email, setEmail] = useState(profile?.email ?? '');
+  const [role, setRole] = useState(profile?.role ?? roleOptions[0]);
+  const [error, setError] = useState<string | undefined>();
 
   function submit() {
-    const trimmedName = name.trim();
+    const trimmedName = fullName.trim();
+    const trimmedEmail = email.trim();
+    const trimmedRole = role.trim();
     if (!trimmedName) {
-      setShowError(true);
+      setError('Full name is required.');
       return;
     }
-    onSubmit(trimmedName, role);
+    if (!trimmedEmail || !isValidEmail(trimmedEmail)) {
+      setError('A valid email is required.');
+      return;
+    }
+    if (!trimmedRole) {
+      setError('Role is required.');
+      return;
+    }
+    onSubmit({ fullName: trimmedName, email: trimmedEmail, role: trimmedRole });
   }
 
   return (
@@ -134,7 +135,7 @@ function TesterProfileModal({
         <div className="tester-modal-header">
           <div>
             <h2 id="tester-modal-title">{mode === 'create' ? 'Before you start' : 'Tester profile'}</h2>
-            <p>Please enter your name so we can connect your feedback and usage during this prototype test.</p>
+            <p>Please enter your details so we can connect your feedback and usage during this prototype test.</p>
           </div>
         </div>
 
@@ -143,32 +144,40 @@ function TesterProfileModal({
         </p>
 
         <label className="tester-field">
-          <span>Name {mode === 'create' ? '' : '(required)'}</span>
+          <span>Full name</span>
           <input
-            value={name}
+            value={fullName}
             onChange={(event) => {
-              setName(event.target.value);
-              setShowError(false);
+              setFullName(event.target.value);
+              setError(undefined);
             }}
-            placeholder="Your name"
+            placeholder="Full name"
           />
-          {showError && <small>Name is required unless you continue anonymously.</small>}
+        </label>
+
+        <label className="tester-field">
+          <span>Email</span>
+          <input
+            type="email"
+            value={email}
+            onChange={(event) => {
+              setEmail(event.target.value);
+              setError(undefined);
+            }}
+            placeholder="name@company.com"
+          />
         </label>
 
         <label className="tester-field">
           <span>Role / team</span>
-          <input
-            value={role}
-            onChange={(event) => setRole(event.target.value)}
-            list="tester-role-options"
-            placeholder="Support, Product, Engineering..."
-          />
-          <datalist id="tester-role-options">
+          <select value={role} onChange={(event) => setRole(event.target.value)}>
             {roleOptions.map((option) => (
-              <option key={option} value={option} />
+              <option key={option} value={option}>{option}</option>
             ))}
-          </datalist>
+          </select>
         </label>
+
+        {error && <div className="tester-form-error">{error}</div>}
 
         <div className="tester-modal-actions">
           {mode === 'edit' && onReset && (
@@ -177,11 +186,7 @@ function TesterProfileModal({
             </button>
           )}
           <div>
-            {mode === 'create' ? (
-              <button type="button" onClick={onAnonymous}>Continue anonymously</button>
-            ) : (
-              <button type="button" onClick={onCancel}>Cancel</button>
-            )}
+            {mode === 'edit' && <button type="button" onClick={onCancel}>Cancel</button>}
             <button type="button" className="primary-button" onClick={submit}>
               {mode === 'create' ? 'Start testing' : 'Save profile'}
             </button>
@@ -190,4 +195,16 @@ function TesterProfileModal({
       </section>
     </div>
   );
+}
+
+function identifyTester(profile: TesterProfile) {
+  identify(profile.testerId, {
+    name: profile.fullName,
+    email: profile.email,
+    role: profile.role,
+  });
+}
+
+function isValidEmail(value: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 }

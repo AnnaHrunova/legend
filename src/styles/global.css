@@ -516,7 +516,8 @@ a {
   font-weight: 850;
 }
 
-.tester-field input {
+.tester-field input,
+.tester-field select {
   min-height: 40px;
   border: 1px solid #d7e0ec;
   border-radius: 8px;
@@ -525,10 +526,18 @@ a {
   padding: 0 12px;
 }
 
-.tester-field small {
+.tester-field small,
+.tester-form-error {
   color: #b42318;
   font-size: 12px;
   font-weight: 750;
+}
+
+.tester-form-error {
+  padding: 9px 10px;
+  border: 1px solid #f4b9b2;
+  border-radius: 8px;
+  background: #fff7f6;
 }
 
 .tester-modal-actions {
