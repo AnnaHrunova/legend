@@ -125,6 +125,10 @@ Filters can scope the heatmap by:
 - focus: one topic or one project
 - time range and granularity
 
+Focus is applied before grouping. Project focus scopes the heatmap to that project: in project grouping it shows one project row, and in topic grouping it shows only topics mapped to that project. Topic focus scopes the heatmap to that topic: in topic grouping it shows one topic row, and in project grouping it shows the projects mapped to that topic.
+
+Cross-project relationships stay in the drill-down/details panel, not as extra heatmap rows. For example, focusing on `eSIM` keeps the heatmap clean while still showing related projects such as `Payments` in details when a topic crosses service boundaries.
+
 Timeline playback shows how topics or projects change over time. It highlights the current bucket while keeping earlier buckets visible, so users can inspect spikes, emerging issues, and problem evolution after releases.
 
 This page is intentionally not a general KPI dashboard. Avoid adding executive summary cards, health-score widgets, or Grafana-style panels unless explicitly requested. The heatmap is the product artifact being validated.

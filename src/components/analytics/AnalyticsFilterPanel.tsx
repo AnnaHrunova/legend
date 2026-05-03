@@ -270,7 +270,7 @@ function activeChips(
 }
 
 function focusHelp(mode: AnalyticsFilterState['focusMode']) {
-  if (mode === 'project') return 'Heatmap and playback are scoped to one project.';
-  if (mode === 'topic') return 'Heatmap and playback are scoped to one topic.';
+  if (mode === 'project') return 'Heatmap is scoped to one project. Related projects are shown in details.';
+  if (mode === 'topic') return 'Heatmap is scoped to one topic. Related projects are shown in details.';
   return 'Showing all topics and projects.';
 }

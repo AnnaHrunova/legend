@@ -11,6 +11,7 @@ import {
   type TimeGranularity,
 } from '../analytics/topics/aggregation';
 import { projects, topics } from '../analytics/topics/domain';
+import { getProject, getTopic } from '../analytics/topics/domain';
 import { generateTopicAnalyticsTickets, type TopicAnalyticsTicket } from '../analytics/topics/mockData';
 import {
   AnalyticsFilterPanel,
@@ -65,12 +66,16 @@ export function TopicsAnalyticsPage() {
   );
 
   const activeBucket = aggregation.buckets[activeBucketIndex] ?? aggregation.buckets[0];
+  const focusedRows = useMemo(
+    () => rowsForFocus(aggregation.rows, filters),
+    [aggregation.rows, filters],
+  );
   const visibleRows = useMemo(
-    () => sortRowsForHeatmap(aggregation.rows, aggregation.cells, aggregation.buckets, activeBucketIndex),
-    [activeBucketIndex, aggregation.buckets, aggregation.cells, aggregation.rows],
+    () => sortRowsForHeatmap(focusedRows, aggregation.cells, aggregation.buckets, activeBucketIndex),
+    [activeBucketIndex, aggregation.buckets, aggregation.cells, focusedRows],
   );
   const selectedRow = selectedCell
-    ? aggregation.rows.find((row) => row.id === selectedCell.rowId)
+    ? focusedRows.find((row) => row.id === selectedCell.rowId)
     : visibleRows[0];
   const selectedBucket = selectedCell?.timeBucket ?? activeBucket;
   const selectedCount = selectedRow && selectedBucket ? getCellCount(aggregation.cells, selectedRow.id, selectedBucket) : 0;
@@ -205,39 +210,7 @@ export function TopicsAnalyticsPage() {
             />
           </div>
 
-          <TopicsHeatmap
-            rows={visibleRows}
-            buckets={aggregation.buckets}
-            cells={aggregation.cells}
-            maxCount={aggregation.maxCount}
-            activeBucketIndex={activeBucketIndex}
-            granularity={filters.granularity}
-            groupingMode={filters.groupBy}
-            filterLabel={filterLabel}
-            selected={selectedCell}
-            onSelect={handleCellSelect}
-            onRowSelect={handleRowSelect}
-          />
-
-          <div className="heatmap-footer">
-            <div className="heatmap-legend refined">
-              <span>Low</span>
-              <i />
-              <strong>High</strong>
-            </div>
-            <span>
-              {filteredTickets.length.toLocaleString()} matching items · {activeBucket ? formatBucketLabel(activeBucket, filters.granularity) : 'No period selected'}
-            </span>
-          </div>
-
-          {aggregation.buckets.length === 0 && (
-            <div className="empty-state heatmap-empty-state">
-              <strong>No matching tickets</strong>
-              <span>Try a wider time range or remove severity/focus filters.</span>
-            </div>
-          )}
-
-          <div className="topics-timeline-row compact">
+          <div className="topics-timeline-row compact top">
             <TimelineControls
               buckets={aggregation.buckets}
               activeIndex={activeBucketIndex}
@@ -257,6 +230,38 @@ export function TopicsAnalyticsPage() {
               focusId={filters.focusId}
               timeBucket={activeBucket}
             />
+          </div>
+
+          <TopicsHeatmap
+            rows={visibleRows}
+            buckets={aggregation.buckets}
+            cells={aggregation.cells}
+            maxCount={aggregation.maxCount}
+            activeBucketIndex={activeBucketIndex}
+            granularity={filters.granularity}
+            groupingMode={filters.groupBy}
+            filterLabel={filterLabel}
+            selected={selectedCell}
+            onSelect={handleCellSelect}
+            onRowSelect={handleRowSelect}
+          />
+
+          {aggregation.buckets.length === 0 && (
+            <div className="empty-state heatmap-empty-state">
+              <strong>No matching tickets</strong>
+              <span>Try a wider time range or remove severity/focus filters.</span>
+            </div>
+          )}
+
+          <div className="heatmap-footer">
+            <div className="heatmap-legend refined">
+              <span>Low</span>
+              <i />
+              <strong>High</strong>
+            </div>
+            <span>
+              {filteredTickets.length.toLocaleString()} matching items · {activeBucket ? formatBucketLabel(activeBucket, filters.granularity) : 'No period selected'}
+            </span>
           </div>
         </div>
 
@@ -318,6 +323,17 @@ export function TopicsAnalyticsPage() {
                 </section>
               ) : null}
 
+              {selectedRow.kind === 'project' && relatedProjectsForProject(selectedRow.id).length ? (
+                <section className="topic-keywords compact">
+                  <h3>Related projects</h3>
+                  <div>
+                    {relatedProjectsForProject(selectedRow.id).map((project) => (
+                      <span key={project.id}>{project.name}</span>
+                    ))}
+                  </div>
+                </section>
+              ) : null}
+
               <section className="representative-tickets compact">
                 <h3>Representative tickets and reviews</h3>
                 {representativeTickets(selectedTickets, selectedRow, filteredTickets).map((ticket) => (
@@ -349,6 +365,23 @@ function filterTicketsByRange(tickets: TopicAnalyticsTicket[], days: number) {
   return tickets.filter((ticket) => Date.parse(ticket.createdAt) >= cutoff);
 }
 
+function rowsForFocus(rows: HeatmapRow[], filters: AnalyticsFilterState) {
+  if (filters.focusMode === 'all' || !filters.focusId) return rows;
+
+  if (filters.focusMode === 'project') {
+    if (filters.groupBy === 'project') {
+      return rows.filter((row) => row.kind === 'project' && row.id === filters.focusId);
+    }
+    return rows.filter((row) => row.kind === 'topic' && row.projectIds.some((projectId) => projectId === filters.focusId));
+  }
+
+  const focusedTopic = getTopic(filters.focusId);
+  if (filters.groupBy === 'topic') {
+    return rows.filter((row) => row.kind === 'topic' && row.id === filters.focusId);
+  }
+  return rows.filter((row) => row.kind === 'project' && focusedTopic?.projectIds.some((projectId) => projectId === row.id));
+}
+
 function sortRowsForHeatmap(rows: HeatmapRow[], cells: ReturnType<typeof aggregateTopics>['cells'], buckets: string[], activeIndex: number) {
   return rows
     .filter((row) => buckets.some((bucket) => getCellCount(cells, row.id, bucket) > 0))
@@ -378,6 +411,22 @@ function matchesRowForDetails(ticket: TopicAnalyticsTicket, row: HeatmapRow) {
   if (row.kind === 'topic') return ticket.topicId === row.id;
   if (row.kind === 'project') return ticket.projectIds.some((projectId) => projectId === row.id);
   return false;
+}
+
+function relatedProjectsForProject(projectId: string) {
+  const relatedIds = new Set<string>();
+  topics
+    .filter((topic) => topic.projectIds.some((topicProjectId) => topicProjectId === projectId))
+    .forEach((topic) => {
+      topic.projectIds.forEach((relatedId) => {
+        if (relatedId !== projectId) relatedIds.add(relatedId);
+      });
+    });
+  return Array.from(relatedIds)
+    .flatMap((relatedId) => {
+      const project = getProject(relatedId);
+      return project ? [project] : [];
+    });
 }
 
 function matchesAnalyticsFilters(ticket: TopicAnalyticsTicket, filters: AnalyticsFilterState) {
