@@ -47,6 +47,21 @@ track(eventName, properties)
 
 ---
 
+## 🧪 Tester Identification
+
+Tester identification is prototype-only.
+
+### Rules
+
+- DO NOT add authentication
+- DO NOT add anonymous tester mode
+- DO NOT add passwords, OAuth, or backend identity
+- keep tester profile storage in `localStorage`
+- required tester fields are full name, email, and role/team
+- enrich events centrally through `src/analytics/analytics.ts`
+
+---
+
 ## 📉 Event Model Rules
 
 ### Allowed

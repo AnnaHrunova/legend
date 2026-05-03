@@ -221,6 +221,8 @@ Required fields:
 - email
 - role / team
 
+Anonymous mode is intentionally not supported. Tester identity is still local-only and is not authentication.
+
 Profile storage:
 
 - stored locally in `localStorage`
