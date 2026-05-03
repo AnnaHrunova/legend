@@ -9,6 +9,7 @@ import { CustomersPage } from './pages/CustomersPage';
 import { InboxPage } from './pages/InboxPage';
 import { ReportsPage } from './pages/ReportsPage';
 import { TicketDetailPage } from './pages/TicketDetailPage';
+import { PlatformHealthPage } from './pages/PlatformHealthPage';
 import { TopicsAnalyticsPage } from './pages/TopicsAnalyticsPage';
 
 export default function App() {
@@ -40,6 +41,7 @@ export default function App() {
         <Route path="customers" element={<CustomersPage />} />
         <Route path="reports" element={<ReportsPage />} />
         <Route path="analytics/topics" element={<TopicsAnalyticsPage />} />
+        <Route path="analytics/platform-health" element={<PlatformHealthPage />} />
         <Route path="admin" element={<AdminPage />} />
       </Route>
     </Routes>

@@ -12,6 +12,7 @@ type FeedbackButtonProps = {
   topicId?: string;
   projectId?: string;
   timeBucket?: string;
+  platform?: string;
   source?: string;
   reviewSource?: string;
   severity?: string;
@@ -29,6 +30,7 @@ export function FeedbackButton({
   topicId,
   projectId,
   timeBucket,
+  platform,
   source,
   reviewSource,
   severity,
@@ -79,6 +81,7 @@ export function FeedbackButton({
       ...(topicId ? { topicId } : {}),
       ...(projectId ? { projectId } : {}),
       ...(timeBucket ? { timeBucket } : {}),
+      ...(platform ? { platform } : {}),
       ...(source ? { source } : {}),
       ...(reviewSource ? { reviewSource } : {}),
       ...(severity ? { severity } : {}),
@@ -94,7 +97,12 @@ export function FeedbackButton({
       <button
         type="button"
         className={`feedback-trigger feedback-${variant}`}
-        onClick={() => setIsOpen(true)}
+        onClick={() => {
+          if (context.startsWith('platform_')) {
+            track('platform_health_feedback_opened', { context });
+          }
+          setIsOpen(true);
+        }}
         aria-label={label}
         title={label}
       >
