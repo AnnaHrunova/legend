@@ -1262,6 +1262,20 @@ textarea:focus {
   width: fit-content;
 }
 
+.macro-applied-state {
+  width: fit-content;
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 4px 9px;
+  border: 1px solid #b7e3c6;
+  border-radius: 999px;
+  background: #e9f8ee;
+  color: #0f766e !important;
+  font-size: 12px;
+  font-weight: 850;
+}
+
 .workflow-panel {
   padding-top: 2px;
 }

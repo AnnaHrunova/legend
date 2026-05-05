@@ -706,6 +706,7 @@ function MacroPicker({
   const [query, setQuery] = useState('');
   const [openedTracked, setOpenedTracked] = useState(false);
   const [lastTrackedSearch, setLastTrackedSearch] = useState('');
+  const [metadataMessage, setMetadataMessage] = useState('');
   const filteredMacros = macros.filter((macro) =>
     `${macro.name} ${macro.description ?? ''} ${macro.category}`.toLowerCase().includes(query.trim().toLowerCase()),
   );
@@ -725,6 +726,11 @@ function MacroPicker({
     if (!normalized || normalized === lastTrackedSearch) return;
     setLastTrackedSearch(normalized);
     track('macro_searched', { queryLength: normalized.length });
+  }
+
+  function applyMetadata(macro: Macro) {
+    onApplyMetadata(macro);
+    setMetadataMessage(`Applied metadata from ${macro.name}`);
   }
 
   return (
@@ -750,6 +756,7 @@ function MacroPicker({
         onChange={(event) => setQuery(event.target.value)}
         placeholder="Search macros..."
       />
+      {metadataMessage && <span className="macro-applied-state">{metadataMessage}</span>}
       <div className="macro-list">
         {filteredMacros.map((macro) => (
           <article key={macro.id} className="macro-item">
@@ -760,7 +767,7 @@ function MacroPicker({
             {hasMacroMetadata(macro) && (
               <div className="macro-suggestions">
                 <span>{macroSuggestionText(macro)}</span>
-                <button type="button" onClick={() => onApplyMetadata(macro)}>Apply metadata</button>
+                <button type="button" onClick={() => applyMetadata(macro)}>Apply metadata</button>
               </div>
             )}
           </article>
