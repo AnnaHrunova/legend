@@ -706,6 +706,7 @@ function MacroPicker({
   const [query, setQuery] = useState('');
   const [openedTracked, setOpenedTracked] = useState(false);
   const [lastTrackedSearch, setLastTrackedSearch] = useState('');
+  const [templateMessage, setTemplateMessage] = useState('');
   const [metadataMessage, setMetadataMessage] = useState('');
   const filteredMacros = macros.filter((macro) =>
     `${macro.name} ${macro.description ?? ''} ${macro.category}`.toLowerCase().includes(query.trim().toLowerCase()),
@@ -728,17 +729,22 @@ function MacroPicker({
     track('macro_searched', { queryLength: normalized.length });
   }
 
+  function insertTemplate(macro: Macro) {
+    onApply(macro);
+    setTemplateMessage(`Inserted reply template: ${macro.name}`);
+  }
+
   function applyMetadata(macro: Macro) {
     onApplyMetadata(macro);
-    setMetadataMessage(`Applied metadata from ${macro.name}`);
+    setMetadataMessage(`Applied tags/status from ${macro.name}`);
   }
 
   return (
     <section className="macro-picker">
       <div className="section-title-row">
         <div>
-          <strong>Macros</strong>
-          <span>Reply templates</span>
+          <strong>Reply templates</strong>
+          <span>Insert a reusable reply, then edit it before sending.</span>
         </div>
         <FeedbackButton
           context="macro_picker"
@@ -754,28 +760,44 @@ function MacroPicker({
         onFocus={trackOpen}
         onBlur={trackSearch}
         onChange={(event) => setQuery(event.target.value)}
-        placeholder="Search macros..."
+        placeholder="Search reply templates..."
       />
-      {metadataMessage && <span className="macro-applied-state">{metadataMessage}</span>}
+      {(templateMessage || metadataMessage) && (
+        <div className="macro-state-stack">
+          {templateMessage && <span className="macro-applied-state">{templateMessage}</span>}
+          {metadataMessage && <span className="macro-applied-state secondary">{metadataMessage}</span>}
+        </div>
+      )}
       <div className="macro-list">
         {filteredMacros.map((macro) => (
           <article key={macro.id} className="macro-item">
             <div className="macro-item-header">
-              <strong>{macro.name}</strong>
-              <span>{macro.category} · {macro.description}</span>
+              <div>
+                <strong>{macro.name}</strong>
+                <span>{macro.description}</span>
+              </div>
+              <span className="macro-category">{macro.category}</span>
             </div>
-            <button type="button" className="macro-insert-button" onClick={() => onApply(macro)}>
-              Insert reply
-            </button>
+            <div className="macro-preview">
+              <span>Template preview</span>
+              <p>{macro.body}</p>
+            </div>
             {hasMacroMetadata(macro) && (
               <div className="macro-suggestions">
                 <span>{macroSuggestionText(macro)}</span>
-                <button type="button" onClick={() => applyMetadata(macro)}>Apply tags/status</button>
               </div>
             )}
+            <div className="macro-actions">
+              <button type="button" className="macro-insert-button" onClick={() => insertTemplate(macro)}>
+                Use template
+              </button>
+              {hasMacroMetadata(macro) && (
+                <button type="button" onClick={() => applyMetadata(macro)}>Apply suggestions</button>
+              )}
+            </div>
           </article>
         ))}
-        {!filteredMacros.length && <span className="panel-empty-text">No macros match this search.</span>}
+        {!filteredMacros.length && <span className="panel-empty-text">No reply templates match this search.</span>}
       </div>
     </section>
   );

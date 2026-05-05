@@ -1191,26 +1191,29 @@ textarea:focus {
 
 .macro-picker {
   display: grid;
-  gap: 10px;
+  gap: 12px;
   padding: 12px;
   border: 1px solid #e1e8f0;
   border-radius: 8px;
   background: #f8fafc;
+  min-width: 0;
 }
 
 .macro-picker .section-title-row > div {
   display: grid;
   gap: 2px;
+  min-width: 0;
 }
 
 .macro-picker strong {
   color: #172033;
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .macro-picker span {
   color: #66758a;
   font-size: 12px;
+  line-height: 1.35;
 }
 
 .macro-list,
@@ -1220,22 +1223,75 @@ textarea:focus {
 }
 
 .macro-list {
-  max-height: 310px;
+  max-height: 430px;
   overflow: auto;
 }
 
 .macro-item {
   display: grid;
-  gap: 8px;
-  padding: 10px;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px;
   border: 1px solid #e4eaf2;
   border-radius: 8px;
   background: #ffffff;
 }
 
 .macro-item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+}
+
+.macro-item-header > div {
+  min-width: 0;
   display: grid;
   gap: 3px;
+}
+
+.macro-item-header strong,
+.macro-item-header span,
+.macro-suggestions span {
+  overflow-wrap: anywhere;
+}
+
+.macro-category {
+  flex: 0 0 auto;
+  padding: 3px 7px;
+  border: 1px solid #dbe4ef;
+  border-radius: 999px;
+  background: #f8fafc;
+  color: #46566d !important;
+  font-size: 11px !important;
+  font-weight: 850;
+  text-transform: capitalize;
+}
+
+.macro-preview {
+  display: grid;
+  gap: 5px;
+  padding: 10px;
+  border: 1px solid #e6edf5;
+  border-radius: 8px;
+  background: #fbfdff;
+}
+
+.macro-preview > span {
+  color: #728197 !important;
+  font-size: 11px !important;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.macro-preview p {
+  max-height: 76px;
+  overflow: hidden;
+  margin: 0;
+  color: #46566c;
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 .macro-insert-button {
@@ -1248,15 +1304,27 @@ textarea:focus {
 }
 
 .macro-suggestions {
-  display: grid;
-  gap: 8px;
-  padding: 9px;
+  padding: 8px 10px;
+  border: 1px solid #e1e8f0;
   border-radius: 7px;
   background: #f1f5f9;
 }
 
-.macro-suggestions button {
+.macro-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.macro-actions button {
   width: fit-content;
+  min-height: 32px !important;
+}
+
+.macro-state-stack {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
 }
 
 .macro-applied-state {
@@ -1271,6 +1339,12 @@ textarea:focus {
   color: #0f766e !important;
   font-size: 12px;
   font-weight: 850;
+}
+
+.macro-applied-state.secondary {
+  border-color: #cbd5e1;
+  background: #ffffff;
+  color: #46566d !important;
 }
 
 .workflow-panel {
