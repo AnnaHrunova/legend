@@ -1233,21 +1233,18 @@ textarea:focus {
   background: #ffffff;
 }
 
-.macro-item > button {
-  width: 100%;
-  height: auto;
-  min-height: unset;
-  justify-content: flex-start;
+.macro-item-header {
   display: grid;
   gap: 3px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  text-align: left;
 }
 
-.macro-item > button:hover strong {
-  color: #1d4ed8;
+.macro-insert-button {
+  width: fit-content;
+  min-height: 32px !important;
+  border-color: #b7d8ff !important;
+  background: #eff6ff !important;
+  color: #1d4ed8 !important;
+  font-weight: 850 !important;
 }
 
 .macro-suggestions {

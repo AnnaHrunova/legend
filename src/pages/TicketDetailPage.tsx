@@ -760,14 +760,17 @@ function MacroPicker({
       <div className="macro-list">
         {filteredMacros.map((macro) => (
           <article key={macro.id} className="macro-item">
-            <button type="button" onClick={() => onApply(macro)}>
+            <div className="macro-item-header">
               <strong>{macro.name}</strong>
               <span>{macro.category} · {macro.description}</span>
+            </div>
+            <button type="button" className="macro-insert-button" onClick={() => onApply(macro)}>
+              Insert reply
             </button>
             {hasMacroMetadata(macro) && (
               <div className="macro-suggestions">
                 <span>{macroSuggestionText(macro)}</span>
-                <button type="button" onClick={() => applyMetadata(macro)}>Apply metadata</button>
+                <button type="button" onClick={() => applyMetadata(macro)}>Apply tags/status</button>
               </div>
             )}
           </article>
