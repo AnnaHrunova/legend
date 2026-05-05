@@ -134,6 +134,9 @@ export interface Ticket {
   rating?: ReviewRating;
   appVersion?: string;
   userName?: string;
+  relatedTicketIds?: string[];
+  mergedTicketIds?: string[];
+  knownIssueIds?: string[];
   sla: {
     state: SlaState;
     firstResponseDueAt: string;
@@ -146,9 +149,28 @@ export interface Ticket {
 export interface Macro {
   id: string;
   name: string;
-  target: 'reply' | 'note';
+  description?: string;
+  category: 'billing' | 'esim' | 'payments' | 'documents' | 'notifications' | 'login' | 'general';
   body: string;
+  suggestedTags?: string[];
+  suggestedStatus?: TicketStatus;
+  suggestedProjectIds?: string[];
 }
+
+export type KnownIssue = {
+  id: string;
+  title: string;
+  description: string;
+  status: 'investigating' | 'identified' | 'fixed' | 'monitoring';
+  topicIds: string[];
+  projectIds: string[];
+  affectedPlatforms?: ReviewPlatform[];
+  affectedSources?: Array<'support' | ReviewSource>;
+  startedAt: string;
+  updatedAt: string;
+  suggestedReply: string;
+  linkedTicketIds: string[];
+};
 
 export interface TicketDraft {
   subject: string;

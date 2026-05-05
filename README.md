@@ -252,6 +252,77 @@ The analytics wrapper enriches every `track()` event with tester context when a 
 
 Feedback uses the same `track()` path, so `feedback_submitted` events receive tester context automatically.
 
+## Support Workflow Features
+
+The prototype includes support-focused workflow tools. These are intentionally not dashboards or backend systems; they exist to validate how agents handle real tickets day to day.
+
+### Macros
+
+Macros are reusable reply templates for common support situations such as eSIM setup, refunds, payment failures, missing documents, notifications, login reset, known issue acknowledgement, and ticket closure.
+
+Agents can search macros, insert a macro into the public reply draft, edit the text before sending, and optionally apply suggested metadata such as tags, status, or project ownership.
+
+Macro instrumentation helps answer:
+
+- which macros are actually used
+- whether agents edit macro text before sending
+- whether suggested metadata is useful
+- where better templates are needed
+
+Key events:
+
+- `macro_picker_opened`
+- `macro_searched`
+- `macro_applied`
+- `macro_metadata_applied`
+- `macro_reply_submitted`
+
+`macro_reply_submitted` includes whether the inserted macro text was edited and a simple changed-length percentage.
+
+### Possible Duplicates
+
+The ticket detail page suggests possible duplicate or related tickets using deterministic prototype logic:
+
+- same topic
+- overlapping projects
+- nearby release/time window
+- same review source
+
+Agents can open a related ticket, link it locally as related, or simulate a merge. Merge simulation does not delete or mutate another ticket; it only records local prototype state on the current ticket.
+
+Key events:
+
+- `duplicates_panel_viewed`
+- `related_ticket_opened`
+- `ticket_linked_as_related`
+- `ticket_merge_mocked`
+
+Future versions may replace this deterministic logic with embeddings or similarity search after the workflow is validated.
+
+### Known Issues
+
+Known issues connect repeated tickets and reviews to active product or operational problems. A matching known issue appears on the ticket detail side panel when the ticket topic, project, platform, or source matches a predefined issue.
+
+Agents can link a ticket to a known issue, apply a suggested known-issue reply into the public reply draft, and open a compact details modal with affected projects, topics, linked tickets, and representative items.
+
+Key events:
+
+- `known_issue_suggested_viewed`
+- `ticket_linked_to_known_issue`
+- `known_issue_reply_applied`
+- `known_issue_details_opened`
+
+This is not incident management. There is no ownership workflow, incident timeline, mitigation tracking, or backend synchronization.
+
+### Prototype Limitations
+
+- no backend
+- no real duplicate merging
+- no real incident management
+- no real ML duplicate detection yet
+- known issues and macros are local mock data
+- relationship state is mocked and stored locally with tickets
+
 ## Event Model
 
 Events must be semantic. Do not add low-level UI noise such as `button_clicked`.
@@ -348,14 +419,33 @@ Do not send raw search text unless there is a reviewed privacy reason.
 ### Advanced Actions
 
 - `macro_applied`
+- `macro_picker_opened`
+- `macro_metadata_applied`
+- `macro_reply_submitted`
 - `bulk_action_completed`
+- `duplicates_panel_viewed`
+- `ticket_linked_as_related`
+- `ticket_merge_mocked`
+- `known_issue_suggested_viewed`
+- `ticket_linked_to_known_issue`
+- `known_issue_reply_applied`
 
 Expected properties:
 
 ```ts
 macro_applied: {
   ticketId: string;
+  macroId: string;
   macroName: string;
+  category: string;
+}
+
+macro_reply_submitted: {
+  ticketId: string;
+  macroId: string;
+  macroName: string;
+  wasEdited: boolean;
+  changedLengthPercent: number;
 }
 
 bulk_action_completed: {
@@ -454,6 +544,10 @@ Implemented contexts include:
 - `ticket_reply_box`
 - `ticket_internal_note_box`
 - `ticket_macros`
+- `macro_picker`
+- `possible_duplicates_panel`
+- `known_issue_panel`
+- `known_issue_details`
 - `ticket_activity_timeline`
 - `ticket_sla`
 - `create_ticket_form`
@@ -473,6 +567,11 @@ Feedback event shape:
   componentLabel?: string;
   ticketId?: string;
   viewId?: string;
+  macroId?: string;
+  knownIssueId?: string;
+  relatedTicketId?: string;
+  topicId?: string;
+  projectIds?: string[];
 }
 ```
 

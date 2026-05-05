@@ -42,7 +42,7 @@ export function AdminPage() {
             `${policy.firstResponse} first response · ${policy.resolution} resolution`,
           ])}
         />
-        <ConfigPanel title="Macros" rows={macros.map((macro) => [macro.name, macro.target === 'reply' ? 'Public reply' : 'Internal note'])} />
+        <ConfigPanel title="Macros" rows={macros.map((macro) => [macro.name, `${macro.category} · ${macro.description ?? 'Reply template'}`])} />
       </div>
     </section>
   );

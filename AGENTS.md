@@ -184,6 +184,21 @@ This is a frontend prototype.
 
 ---
 
+## 🧰 Support Workflow Features
+
+Macros, possible duplicates, related tickets, and known issues are allowed only when they help validate ticket handling.
+
+### Rules
+
+- do not turn Known Issues into a full incident management system unless explicitly requested
+- do not implement real duplicate merging in the prototype
+- do not add backend APIs for workflow features
+- do not add direct PostHog calls in workflow components
+- all workflow tracking must go through `analytics.track()`
+- keep workflow UI on ticket detail focused on daily support actions
+
+---
+
 ## 🔁 State Changes
 
 All important user actions MUST:

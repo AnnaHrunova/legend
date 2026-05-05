@@ -11,6 +11,10 @@ type FeedbackButtonProps = {
   viewId?: string;
   topicId?: string;
   projectId?: string;
+  projectIds?: string[];
+  macroId?: string;
+  knownIssueId?: string;
+  relatedTicketId?: string;
   timeBucket?: string;
   platform?: string;
   source?: string;
@@ -34,6 +38,10 @@ export function FeedbackButton({
   viewId,
   topicId,
   projectId,
+  projectIds,
+  macroId,
+  knownIssueId,
+  relatedTicketId,
   timeBucket,
   platform,
   source,
@@ -90,6 +98,10 @@ export function FeedbackButton({
       ...(viewId ? { viewId } : {}),
       ...(topicId ? { topicId } : {}),
       ...(projectId ? { projectId } : {}),
+      ...(projectIds?.length ? { projectIds } : {}),
+      ...(macroId ? { macroId } : {}),
+      ...(knownIssueId ? { knownIssueId } : {}),
+      ...(relatedTicketId ? { relatedTicketId } : {}),
       ...(timeBucket ? { timeBucket } : {}),
       ...(platform ? { platform } : {}),
       ...(source ? { source } : {}),

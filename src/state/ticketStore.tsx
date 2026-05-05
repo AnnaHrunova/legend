@@ -56,6 +56,9 @@ function normalizeTickets(tickets: Ticket[]): Ticket[] {
       source: legacyReview ? 'review' : ticket.source ?? 'support',
       ...(reviewSource ? { reviewSource } : {}),
       ...(platform ? { platform } : {}),
+      relatedTicketIds: ticket.relatedTicketIds ?? [],
+      mergedTicketIds: ticket.mergedTicketIds ?? [],
+      knownIssueIds: ticket.knownIssueIds ?? [],
     };
   });
 
@@ -256,6 +259,9 @@ export function TicketProvider({ children }: { children: ReactNode }) {
       topicId: topic.id,
       projectIds: topic.projectIds,
       source: 'support',
+      relatedTicketIds: [],
+      mergedTicketIds: [],
+      knownIssueIds: [],
       sla: {
         state: draft.priority === 'Urgent' ? 'At risk' : 'Healthy',
         firstResponseDueAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),

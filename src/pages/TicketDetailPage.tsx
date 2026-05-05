@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, Navigate, useParams } from 'react-router-dom';
+import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
 import { track } from '../analytics/analytics';
+import { getProject, getTopic } from '../analytics/topics/domain';
 import { PriorityBadge, SlaBadge, StatusBadge } from '../components/Badges';
 import { FeedbackButton } from '../components/feedback/FeedbackButton';
 import { formatDate } from '../components/format';
+import { knownIssues } from '../data/mockKnownIssues';
 import { macros } from '../data/mockMacros';
 import { agents, currentUser } from '../data/mockUsers';
 import {
@@ -11,24 +13,42 @@ import {
   STATUSES,
   TEAMS,
   severityFromRating,
+  type KnownIssue,
+  type Macro,
   type Priority,
   type ReviewSource,
   type Team,
+  type Ticket,
   type TicketStatus,
 } from '../domain/types';
 import { useTickets } from '../state/ticketStore';
 
 export function TicketDetailPage() {
   const { ticketId } = useParams();
-  const { getTicket, updateTicket, assignToCurrentUser, addInternalNote, addPublicReply } = useTickets();
+  const navigate = useNavigate();
+  const { tickets, getTicket, updateTicket, assignToCurrentUser, addInternalNote, addPublicReply } = useTickets();
   const ticket = ticketId ? getTicket(ticketId) : undefined;
   const [reply, setReply] = useState('');
+  const [appliedMacro, setAppliedMacro] = useState<AppliedMacroState | undefined>();
+  const [duplicateActionMessage, setDuplicateActionMessage] = useState('');
+  const [knownIssueMessage, setKnownIssueMessage] = useState('');
+  const [knownIssueDetails, setKnownIssueDetails] = useState<KnownIssue | undefined>();
   const [reviewReply, setReviewReply] = useState('');
   const [reviewReplyStarted, setReviewReplyStarted] = useState(false);
   const [reviewReplySent, setReviewReplySent] = useState(false);
   const [note, setNote] = useState('');
   const [newTag, setNewTag] = useState('');
   const activeTicketId = ticket?.id;
+
+  const possibleDuplicates = useMemo(
+    () => (ticket ? possibleDuplicateTickets(ticket, tickets).slice(0, 4) : []),
+    [ticket, tickets],
+  );
+  const suggestedKnownIssues = useMemo(
+    () => (ticket ? matchingKnownIssues(ticket) : []),
+    [ticket],
+  );
+  const primaryKnownIssue = suggestedKnownIssues[0];
 
   const customerMeta = useMemo(() => {
     if (!ticket) return [];
@@ -53,6 +73,23 @@ export function TicketDetailPage() {
       }
     }
   }, [activeTicketId, ticket?.platform, ticket?.rating, ticket?.reviewSource, ticket?.source]);
+
+  useEffect(() => {
+    if (!activeTicketId) return;
+    track('duplicates_panel_viewed', {
+      ticketId: activeTicketId,
+      suggestedCount: possibleDuplicates.length,
+    });
+  }, [activeTicketId, possibleDuplicates.length]);
+
+  useEffect(() => {
+    if (!activeTicketId || !primaryKnownIssue) return;
+    track('known_issue_suggested_viewed', {
+      ticketId: activeTicketId,
+      knownIssueId: primaryKnownIssue.id,
+      status: primaryKnownIssue.status,
+    });
+  }, [activeTicketId, primaryKnownIssue]);
 
   if (!ticket) {
     return <Navigate to="/inbox" replace />;
@@ -120,6 +157,123 @@ export function TicketDetailPage() {
       { tags: activeTicket.tags.filter((item) => item !== tag) },
       `Removed tag ${tag}`,
     );
+  }
+
+  function applyMacro(macro: Macro) {
+    setReply((current) => `${current}${current ? '\n\n' : ''}${macro.body}`);
+    setAppliedMacro({
+      macroId: macro.id,
+      macroName: macro.name,
+      category: macro.category,
+      body: macro.body,
+    });
+    track('macro_applied', {
+      ticketId: activeTicket.id,
+      macroId: macro.id,
+      macroName: macro.name,
+      category: macro.category,
+      ...(macro.suggestedStatus ? { suggestedStatus: macro.suggestedStatus } : {}),
+      ...(macro.suggestedTags?.length ? { suggestedTags: macro.suggestedTags } : {}),
+      ...(macro.suggestedProjectIds?.length ? { suggestedProjectIds: macro.suggestedProjectIds } : {}),
+    });
+  }
+
+  function applyMacroMetadata(macro: Macro) {
+    const nextTags = Array.from(new Set([...activeTicket.tags, ...(macro.suggestedTags ?? [])]));
+    const nextProjectIds = Array.from(new Set([...activeTicket.projectIds, ...(macro.suggestedProjectIds ?? [])]));
+    updateTicket(
+      activeTicket.id,
+      {
+        ...(macro.suggestedTags?.length ? { tags: nextTags } : {}),
+        ...(macro.suggestedStatus ? { status: macro.suggestedStatus } : {}),
+        ...(macro.suggestedProjectIds?.length ? { projectIds: nextProjectIds } : {}),
+      },
+      `Applied macro metadata from ${macro.name}`,
+    );
+    track('macro_metadata_applied', {
+      ticketId: activeTicket.id,
+      macroId: macro.id,
+      ...(macro.suggestedTags?.length ? { appliedTags: macro.suggestedTags } : {}),
+      ...(macro.suggestedStatus ? { appliedStatus: macro.suggestedStatus } : {}),
+      ...(macro.suggestedProjectIds?.length ? { appliedProjectIds: macro.suggestedProjectIds } : {}),
+    });
+  }
+
+  function submitPublicReply() {
+    const text = reply.trim();
+    if (!text) return;
+    addPublicReply(activeTicket.id, text);
+    track('ticket_reply_submitted', { ticketId: activeTicket.id });
+    if (appliedMacro) {
+      track('macro_reply_submitted', {
+        ticketId: activeTicket.id,
+        macroId: appliedMacro.macroId,
+        macroName: appliedMacro.macroName,
+        wasEdited: text !== appliedMacro.body,
+        changedLengthPercent: changedLengthPercent(appliedMacro.body, text),
+      });
+    }
+    setReply('');
+    setAppliedMacro(undefined);
+  }
+
+  function openRelatedTicket(relatedTicketId: string, reason: DuplicateReason) {
+    track('related_ticket_opened', {
+      ticketId: activeTicket.id,
+      relatedTicketId,
+      reason,
+    });
+    navigate(`/tickets/${relatedTicketId}`);
+  }
+
+  function linkRelatedTicket(relatedTicketId: string, reason: DuplicateReason) {
+    const relatedTicketIds = Array.from(new Set([...(activeTicket.relatedTicketIds ?? []), relatedTicketId]));
+    updateTicket(activeTicket.id, { relatedTicketIds }, `Linked ${relatedTicketId} as related`);
+    setDuplicateActionMessage('Linked as related');
+    track('ticket_linked_as_related', {
+      ticketId: activeTicket.id,
+      relatedTicketId,
+      reason,
+    });
+  }
+
+  function mockMergeTicket(mergedTicketId: string, reason: DuplicateReason) {
+    const mergedTicketIds = Array.from(new Set([...(activeTicket.mergedTicketIds ?? []), mergedTicketId]));
+    updateTicket(activeTicket.id, { mergedTicketIds }, `Merge simulated with ${mergedTicketId}`);
+    setDuplicateActionMessage('Merge simulated');
+    track('ticket_merge_mocked', {
+      ticketId: activeTicket.id,
+      mergedTicketId,
+      reason,
+    });
+  }
+
+  function linkKnownIssue(issue: KnownIssue) {
+    const knownIssueIds = Array.from(new Set([...(activeTicket.knownIssueIds ?? []), issue.id]));
+    updateTicket(activeTicket.id, { knownIssueIds }, `Linked to known issue: ${issue.title}`);
+    setKnownIssueMessage('Ticket linked to known issue');
+    track('ticket_linked_to_known_issue', {
+      ticketId: activeTicket.id,
+      knownIssueId: issue.id,
+      status: issue.status,
+    });
+  }
+
+  function applyKnownIssueReply(issue: KnownIssue) {
+    setReply((current) => `${current}${current ? '\n\n' : ''}${issue.suggestedReply}`);
+    setKnownIssueMessage('Known issue reply applied');
+    track('known_issue_reply_applied', {
+      ticketId: activeTicket.id,
+      knownIssueId: issue.id,
+    });
+  }
+
+  function openKnownIssueDetails(issue: KnownIssue) {
+    setKnownIssueDetails(issue);
+    track('known_issue_details_opened', {
+      knownIssueId: issue.id,
+      source: 'ticket_detail',
+    });
   }
 
   return (
@@ -304,22 +458,12 @@ export function TicketDetailPage() {
                   componentLabel="Public reply box"
                 />
               </div>
-              <div className="section-title-row">
-                <MacroSelector
-                  target="reply"
-                  onApply={(body, macroName) => {
-                    setReply((current) => `${current}${current ? '\n\n' : ''}${body}`);
-                    track('macro_applied', { ticketId: ticket.id, macroName });
-                  }}
-                />
-                <FeedbackButton
-                  context="ticket_macros"
-                  variant="icon"
-                  ticketId={ticket.id}
-                  componentLabel="Reply macros"
-                />
-              </div>
             </div>
+            <MacroPicker
+              ticket={ticket}
+              onApply={applyMacro}
+              onApplyMetadata={applyMacroMetadata}
+            />
             <textarea
               value={reply}
               onChange={(event) => setReply(event.target.value)}
@@ -328,11 +472,7 @@ export function TicketDetailPage() {
             <button
               className="primary-button"
               disabled={!reply.trim()}
-              onClick={() => {
-                addPublicReply(ticket.id, reply.trim());
-                track('ticket_reply_submitted', { ticketId: ticket.id });
-                setReply('');
-              }}
+              onClick={submitPublicReply}
             >
               Send reply
             </button>
@@ -347,21 +487,6 @@ export function TicketDetailPage() {
                   variant="icon"
                   ticketId={ticket.id}
                   componentLabel="Internal note box"
-                />
-              </div>
-              <div className="section-title-row">
-                <MacroSelector
-                  target="note"
-                  onApply={(body, macroName) => {
-                    setNote((current) => `${current}${current ? '\n\n' : ''}${body}`);
-                    track('macro_applied', { ticketId: ticket.id, macroName });
-                  }}
-                />
-                <FeedbackButton
-                  context="ticket_macros"
-                  variant="icon"
-                  ticketId={ticket.id}
-                  componentLabel="Internal note macros"
                 />
               </div>
             </div>
@@ -463,6 +588,24 @@ export function TicketDetailPage() {
           </dl>
         </section>
 
+        <PossibleDuplicatesPanel
+          ticket={ticket}
+          suggestions={possibleDuplicates}
+          message={duplicateActionMessage}
+          onOpen={openRelatedTicket}
+          onLink={linkRelatedTicket}
+          onMerge={mockMergeTicket}
+        />
+
+        <KnownIssuePanel
+          ticket={ticket}
+          issues={suggestedKnownIssues}
+          message={knownIssueMessage}
+          onLink={linkKnownIssue}
+          onApplyReply={applyKnownIssueReply}
+          onOpenDetails={openKnownIssueDetails}
+        />
+
         <section className="side-section">
           <div className="section-title-row">
             <h2>SLA</h2>
@@ -526,39 +669,385 @@ export function TicketDetailPage() {
           </ol>
         </section>
       </aside>
+      {knownIssueDetails && (
+        <KnownIssueDetailsModal
+          issue={knownIssueDetails}
+          tickets={tickets}
+          onClose={() => setKnownIssueDetails(undefined)}
+        />
+      )}
     </section>
   );
 }
 
-function MacroSelector({
-  target,
+type AppliedMacroState = {
+  macroId: string;
+  macroName: string;
+  category: Macro['category'];
+  body: string;
+};
+
+type DuplicateReason = 'Same topic' | 'Same project' | 'Same release window' | 'Same review source';
+
+type DuplicateSuggestion = {
+  ticket: Ticket;
+  reasons: DuplicateReason[];
+};
+
+function MacroPicker({
+  ticket,
   onApply,
+  onApplyMetadata,
 }: {
-  target: 'reply' | 'note';
-  onApply: (body: string, macroName: string) => void;
+  ticket: Ticket;
+  onApply: (macro: Macro) => void;
+  onApplyMetadata: (macro: Macro) => void;
+}) {
+  const [query, setQuery] = useState('');
+  const [openedTracked, setOpenedTracked] = useState(false);
+  const [lastTrackedSearch, setLastTrackedSearch] = useState('');
+  const filteredMacros = macros.filter((macro) =>
+    `${macro.name} ${macro.description ?? ''} ${macro.category}`.toLowerCase().includes(query.trim().toLowerCase()),
+  );
+
+  function trackOpen() {
+    if (openedTracked) return;
+    setOpenedTracked(true);
+    track('macro_picker_opened', {
+      ticketId: ticket.id,
+      topicId: ticket.topicId,
+      projectIds: ticket.projectIds,
+    });
+  }
+
+  function trackSearch() {
+    const normalized = query.trim();
+    if (!normalized || normalized === lastTrackedSearch) return;
+    setLastTrackedSearch(normalized);
+    track('macro_searched', { queryLength: normalized.length });
+  }
+
+  return (
+    <section className="macro-picker">
+      <div className="section-title-row">
+        <div>
+          <strong>Macros</strong>
+          <span>Reply templates</span>
+        </div>
+        <FeedbackButton
+          context="macro_picker"
+          variant="icon"
+          ticketId={ticket.id}
+          topicId={ticket.topicId}
+          projectIds={ticket.projectIds}
+          componentLabel="Macro picker"
+        />
+      </div>
+      <input
+        value={query}
+        onFocus={trackOpen}
+        onBlur={trackSearch}
+        onChange={(event) => setQuery(event.target.value)}
+        placeholder="Search macros..."
+      />
+      <div className="macro-list">
+        {filteredMacros.map((macro) => (
+          <article key={macro.id} className="macro-item">
+            <button type="button" onClick={() => onApply(macro)}>
+              <strong>{macro.name}</strong>
+              <span>{macro.category} · {macro.description}</span>
+            </button>
+            {hasMacroMetadata(macro) && (
+              <div className="macro-suggestions">
+                <span>{macroSuggestionText(macro)}</span>
+                <button type="button" onClick={() => onApplyMetadata(macro)}>Apply metadata</button>
+              </div>
+            )}
+          </article>
+        ))}
+        {!filteredMacros.length && <span className="panel-empty-text">No macros match this search.</span>}
+      </div>
+    </section>
+  );
+}
+
+function PossibleDuplicatesPanel({
+  ticket,
+  suggestions,
+  message,
+  onOpen,
+  onLink,
+  onMerge,
+}: {
+  ticket: Ticket;
+  suggestions: DuplicateSuggestion[];
+  message: string;
+  onOpen: (relatedTicketId: string, reason: DuplicateReason) => void;
+  onLink: (relatedTicketId: string, reason: DuplicateReason) => void;
+  onMerge: (mergedTicketId: string, reason: DuplicateReason) => void;
 }) {
   return (
-    <select
-      defaultValue=""
-      onChange={(event) => {
-        const macro = macros.find((item) => item.id === event.target.value);
-        if (!macro) return;
-        onApply(macro.body, macro.name);
-        event.currentTarget.value = '';
-      }}
-    >
-      <option value="">Apply macro</option>
-      {macros
-        .filter((macro) => macro.target === target)
-        .map((macro) => (
-          <option key={macro.id} value={macro.id}>
-            {macro.name}
-          </option>
-        ))}
-    </select>
+    <section className="side-section workflow-panel">
+      <div className="section-title-row">
+        <h2>Possible duplicates</h2>
+        <FeedbackButton
+          context="possible_duplicates_panel"
+          variant="icon"
+          ticketId={ticket.id}
+          topicId={ticket.topicId}
+          projectIds={ticket.projectIds}
+          componentLabel="Possible duplicates panel"
+        />
+      </div>
+      {message && <span className="mock-sent-state">{message}</span>}
+      <div className="related-ticket-list">
+        {suggestions.map((suggestion) => {
+          const related = suggestion.ticket;
+          const reason = suggestion.reasons[0];
+          return (
+            <article key={related.id}>
+              <div>
+                <strong>{related.subject}</strong>
+                <span>{related.status} · {sourceLabel(related)} · {formatDate(related.createdAt)}</span>
+                <em>{getTopic(related.topicId)?.name ?? related.topicId} · {suggestion.reasons.join(', ')}</em>
+              </div>
+              <div className="workflow-actions">
+                <button type="button" onClick={() => onOpen(related.id, reason)}>Open</button>
+                <button type="button" onClick={() => onLink(related.id, reason)}>Link</button>
+                <button type="button" onClick={() => onMerge(related.id, reason)}>Merge mock</button>
+              </div>
+            </article>
+          );
+        })}
+        {!suggestions.length && <span className="panel-empty-text">No likely duplicates found.</span>}
+      </div>
+    </section>
+  );
+}
+
+function KnownIssuePanel({
+  ticket,
+  issues,
+  message,
+  onLink,
+  onApplyReply,
+  onOpenDetails,
+}: {
+  ticket: Ticket;
+  issues: KnownIssue[];
+  message: string;
+  onLink: (issue: KnownIssue) => void;
+  onApplyReply: (issue: KnownIssue) => void;
+  onOpenDetails: (issue: KnownIssue) => void;
+}) {
+  const issue = issues[0];
+  return (
+    <section className="side-section workflow-panel">
+      <div className="section-title-row">
+        <h2>Known issue</h2>
+        <FeedbackButton
+          context="known_issue_panel"
+          variant="icon"
+          ticketId={ticket.id}
+          knownIssueId={issue?.id}
+          topicId={ticket.topicId}
+          projectIds={ticket.projectIds}
+          componentLabel="Known issue panel"
+        />
+      </div>
+      {message && <span className="mock-sent-state">{message}</span>}
+      {issue ? (
+        <article className="known-issue-card">
+          <div>
+            <strong>{issue.title}</strong>
+            <span>{issue.status} · {issue.projectIds.map(projectName).join(', ')}</span>
+          </div>
+          <p>{issue.description}</p>
+          <small>{affectedLabel(issue)} · {issue.linkedTicketIds.length + (ticket.knownIssueIds?.includes(issue.id) ? 1 : 0)} linked tickets</small>
+          <blockquote>{issue.suggestedReply}</blockquote>
+          <div className="workflow-actions">
+            <button type="button" onClick={() => onLink(issue)}>Link ticket</button>
+            <button type="button" onClick={() => onApplyReply(issue)}>Apply reply</button>
+            <button type="button" onClick={() => onOpenDetails(issue)}>Details</button>
+          </div>
+        </article>
+      ) : (
+        <span className="panel-empty-text">No matching known issue.</span>
+      )}
+    </section>
+  );
+}
+
+function KnownIssueDetailsModal({
+  issue,
+  tickets,
+  onClose,
+}: {
+  issue: KnownIssue;
+  tickets: Ticket[];
+  onClose: () => void;
+}) {
+  const representative = tickets
+    .filter((ticket) => knownIssueMatchesTicket(issue, ticket) || issue.linkedTicketIds.includes(ticket.id))
+    .slice(0, 5);
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true">
+      <section className="known-issue-modal">
+        <div className="section-header">
+          <div>
+            <p className="eyebrow">Known issue</p>
+            <h2>{issue.title}</h2>
+          </div>
+          <FeedbackButton
+            context="known_issue_details"
+            variant="icon"
+            knownIssueId={issue.id}
+            projectIds={issue.projectIds}
+            componentLabel="Known issue details"
+          />
+        </div>
+        <p>{issue.description}</p>
+        <dl className="review-meta-grid">
+          <div><dt>Status</dt><dd>{issue.status}</dd></div>
+          <div><dt>Projects</dt><dd>{issue.projectIds.map(projectName).join(', ')}</dd></div>
+          <div><dt>Topics</dt><dd>{issue.topicIds.map(topicName).join(', ')}</dd></div>
+          <div><dt>Updated</dt><dd>{formatDate(issue.updatedAt)}</dd></div>
+        </dl>
+        <section className="known-issue-reply-preview">
+          <h3>Suggested reply</h3>
+          <p>{issue.suggestedReply}</p>
+        </section>
+        <section className="representative-tickets compact">
+          <h3>Representative tickets/reviews</h3>
+          {representative.map((ticket) => (
+            <article key={ticket.id}>
+              <div>
+                <strong>{ticket.subject}</strong>
+                <span>{ticket.id} · {sourceLabel(ticket)} · {formatDate(ticket.createdAt)}</span>
+              </div>
+              <p>{ticket.description}</p>
+            </article>
+          ))}
+        </section>
+        <div className="feedback-actions">
+          <button type="button" className="primary-button" onClick={onClose}>Close</button>
+        </div>
+      </section>
+    </div>
   );
 }
 
 function reviewSourceLabel(source?: ReviewSource) {
   return source === 'google_play' ? 'Google Play' : 'App Store';
+}
+
+function sourceLabel(ticket: Ticket) {
+  if (ticket.source === 'support') return 'Support';
+  return reviewSourceLabel(ticket.reviewSource);
+}
+
+function projectName(projectId: string) {
+  return getProject(projectId)?.name ?? projectId;
+}
+
+function topicName(topicId: string) {
+  return getTopic(topicId)?.name ?? topicId;
+}
+
+function hasMacroMetadata(macro: Macro) {
+  return Boolean(macro.suggestedTags?.length || macro.suggestedStatus || macro.suggestedProjectIds?.length);
+}
+
+function macroSuggestionText(macro: Macro) {
+  const suggestions = [
+    ...(macro.suggestedTags?.map((tag) => `tag=${tag}`) ?? []),
+    ...(macro.suggestedStatus ? [`status=${macro.suggestedStatus}`] : []),
+    ...(macro.suggestedProjectIds?.map((projectId) => `project=${projectName(projectId)}`) ?? []),
+  ];
+
+  return `This macro suggests: ${suggestions.join(', ')}`;
+}
+
+function changedLengthPercent(originalText: string, submittedText: string) {
+  if (!originalText.length) return 0;
+  return Math.round((Math.abs(submittedText.length - originalText.length) / originalText.length) * 100);
+}
+
+function possibleDuplicateTickets(ticket: Ticket, tickets: Ticket[]): DuplicateSuggestion[] {
+  const ticketCreatedAt = Date.parse(ticket.createdAt);
+  const nearbyWindowMs = 1000 * 60 * 60 * 24 * 10;
+
+  return tickets
+    .filter((candidate) => candidate.id !== ticket.id)
+    .map((candidate) => {
+      const reasons: DuplicateReason[] = [];
+
+      if (candidate.topicId === ticket.topicId) {
+        reasons.push('Same topic');
+      }
+
+      if (candidate.projectIds.some((projectId) => ticket.projectIds.includes(projectId))) {
+        reasons.push('Same project');
+      }
+
+      if (Math.abs(Date.parse(candidate.createdAt) - ticketCreatedAt) <= nearbyWindowMs) {
+        reasons.push('Same release window');
+      }
+
+      if (
+        ticket.source === 'review' &&
+        candidate.source === 'review' &&
+        ticket.reviewSource &&
+        candidate.reviewSource === ticket.reviewSource
+      ) {
+        reasons.push('Same review source');
+      }
+
+      return { ticket: candidate, reasons };
+    })
+    .filter((suggestion) => suggestion.reasons.includes('Same topic') || suggestion.reasons.length >= 2)
+    .sort((left, right) => {
+      if (right.reasons.length !== left.reasons.length) {
+        return right.reasons.length - left.reasons.length;
+      }
+      return Date.parse(right.ticket.createdAt) - Date.parse(left.ticket.createdAt);
+    });
+}
+
+function matchingKnownIssues(ticket: Ticket) {
+  return knownIssues
+    .filter((issue) => knownIssueMatchesTicket(issue, ticket))
+    .sort((left, right) => scoreKnownIssue(right, ticket) - scoreKnownIssue(left, ticket));
+}
+
+function knownIssueMatchesTicket(issue: KnownIssue, ticket: Ticket) {
+  const ticketSource = ticket.source === 'support' ? 'support' : ticket.reviewSource;
+  const topicMatches = issue.topicIds.includes(ticket.topicId);
+  const projectMatches = ticket.projectIds.some((projectId) => issue.projectIds.includes(projectId));
+  const sourceMatches = !issue.affectedSources?.length || Boolean(ticketSource && issue.affectedSources.includes(ticketSource));
+  const platformMatches =
+    !issue.affectedPlatforms?.length || Boolean(ticket.platform && issue.affectedPlatforms.includes(ticket.platform));
+
+  return (topicMatches || projectMatches) && sourceMatches && platformMatches;
+}
+
+function scoreKnownIssue(issue: KnownIssue, ticket: Ticket) {
+  const ticketSource = ticket.source === 'support' ? 'support' : ticket.reviewSource;
+  let score = 0;
+
+  if (issue.topicIds.includes(ticket.topicId)) score += 4;
+  score += ticket.projectIds.filter((projectId) => issue.projectIds.includes(projectId)).length;
+  if (ticketSource && issue.affectedSources?.includes(ticketSource)) score += 2;
+  if (ticket.platform && issue.affectedPlatforms?.includes(ticket.platform)) score += 2;
+
+  return score;
+}
+
+function affectedLabel(issue: KnownIssue) {
+  const sources = issue.affectedSources?.map((source) => (source === 'support' ? 'Support' : reviewSourceLabel(source))) ?? [];
+  const platforms =
+    issue.affectedPlatforms?.map((platform) => (platform === 'ios' ? 'iOS' : 'Android')) ?? [];
+  const labels = [...sources, ...platforms];
+
+  return labels.length ? labels.join(', ') : 'All sources';
 }
