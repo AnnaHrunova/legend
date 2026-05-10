@@ -1,0 +1,10 @@
+{
+	email {$CADDY_EMAIL}
+}
+
+{$HETZNER_DOMAIN} {
+	root * /srv/legend
+	encode zstd gzip
+	try_files {path} /index.html
+	file_server
+}

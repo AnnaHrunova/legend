@@ -674,6 +674,54 @@ The PostHog EU ingestion endpoint is configured in code:
 https://eu.i.posthog.com
 ```
 
+## Hetzner Deployment
+
+Hetzner deployment is prepared as a separate manual path for `app.legenddesk.com`.
+
+It does not replace the existing GitHub Pages prototype deployment.
+
+Files:
+
+```text
+Dockerfile.frontend
+docker-compose.hetzner.yml
+Caddyfile
+.github/workflows/deploy-hetzner.yml
+docs/HETZNER_DEPLOYMENT.md
+```
+
+How it works:
+
+1. GitHub Actions builds the Vite frontend into a Docker image.
+2. The image is pushed to GitHub Container Registry.
+3. The workflow SSHes into the Hetzner server.
+4. Docker Compose pulls and runs the frontend container.
+5. Caddy serves the app and manages HTTPS automatically.
+
+The workflow is manual-only:
+
+```text
+GitHub -> Actions -> Deploy to Hetzner -> Run workflow
+```
+
+Initial target domain:
+
+```text
+app.legenddesk.com
+```
+
+Future backend domain:
+
+```text
+api.legenddesk.com
+```
+
+Server setup, DNS, and required GitHub secrets are documented in:
+
+```text
+docs/HETZNER_DEPLOYMENT.md
+```
+
 ## Product Workflow
 
 The intended validation process:

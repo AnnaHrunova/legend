@@ -1,0 +1,18 @@
+services:
+  legend-frontend:
+    image: ghcr.io/annahrunova/legend-frontend:latest
+    container_name: legend-frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      HETZNER_DOMAIN: ${HETZNER_DOMAIN}
+      CADDY_EMAIL: ${CADDY_EMAIL}
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:
