@@ -102,9 +102,10 @@ jobs:
             "HETZNER_DOMAIN='${HETZNER_DOMAIN}' CADDY_EMAIL='${CADDY_EMAIL}' GHCR_USERNAME='${GHCR_USERNAME}' GHCR_TOKEN='${GHCR_TOKEN}' bash -s" <<'REMOTE_SCRIPT'
           set -euo pipefail
           cd /opt/legend
+          printf 'HETZNER_DOMAIN=%s\nCADDY_EMAIL=%s\n' "$HETZNER_DOMAIN" "$CADDY_EMAIL" > .env
           echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
-          HETZNER_DOMAIN="$HETZNER_DOMAIN" CADDY_EMAIL="$CADDY_EMAIL" docker compose -f docker-compose.hetzner.yml pull
-          HETZNER_DOMAIN="$HETZNER_DOMAIN" CADDY_EMAIL="$CADDY_EMAIL" docker compose -f docker-compose.hetzner.yml up -d
+          docker compose -f docker-compose.hetzner.yml pull
+          docker compose -f docker-compose.hetzner.yml up -d
           docker image prune -f
           REMOTE_SCRIPT
         env:

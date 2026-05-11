@@ -118,6 +118,20 @@ Run manually:
 GitHub -> Actions -> Deploy to Hetzner -> Run workflow
 ```
 
+The deploy step writes `/opt/legend/.env` on the server:
+
+```text
+HETZNER_DOMAIN=app.legenddesk.com
+CADDY_EMAIL=your-email@example.com
+```
+
+That keeps manual server checks clean:
+
+```bash
+cd /opt/legend
+docker compose -f docker-compose.hetzner.yml ps
+```
+
 ## Notes
 
 - The workflow is manual-only.
