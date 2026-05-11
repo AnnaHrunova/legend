@@ -50,38 +50,68 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Prepare SSH key
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "${HETZNER_SSH_KEY}" > ~/.ssh/hetzner_deploy
+          chmod 600 ~/.ssh/hetzner_deploy
+          ssh-keygen -lf ~/.ssh/hetzner_deploy
+        env:
+          HETZNER_SSH_KEY: ${{ secrets.HETZNER_SSH_KEY }}
+
+      - name: Verify SSH access
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/hetzner_deploy \
+            -p "${HETZNER_PORT}" \
+            -o BatchMode=yes \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=accept-new \
+            "${HETZNER_USER}@${HETZNER_HOST}" \
+            'whoami && mkdir -p /opt/legend'
+        env:
+          HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
+          HETZNER_USER: ${{ secrets.HETZNER_USER }}
+          HETZNER_PORT: ${{ secrets.HETZNER_PORT || 22 }}
+
       - name: Copy compose file to server
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.HETZNER_HOST }}
-          username: ${{ secrets.HETZNER_USER }}
-          key: ${{ secrets.HETZNER_SSH_KEY }}
-          port: ${{ secrets.HETZNER_PORT || 22 }}
-          source: docker-compose.hetzner.yml
-          target: /opt/legend
+        run: |
+          set -euo pipefail
+          scp -i ~/.ssh/hetzner_deploy \
+            -P "${HETZNER_PORT}" \
+            -o BatchMode=yes \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=accept-new \
+            docker-compose.hetzner.yml \
+            "${HETZNER_USER}@${HETZNER_HOST}:/opt/legend/docker-compose.hetzner.yml"
+        env:
+          HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
+          HETZNER_USER: ${{ secrets.HETZNER_USER }}
+          HETZNER_PORT: ${{ secrets.HETZNER_PORT || 22 }}
 
       - name: Deploy on server
-        uses: appleboy/ssh-action@v1.2.0
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/hetzner_deploy \
+            -p "${HETZNER_PORT}" \
+            -o BatchMode=yes \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=accept-new \
+            "${HETZNER_USER}@${HETZNER_HOST}" \
+            "HETZNER_DOMAIN='${HETZNER_DOMAIN}' CADDY_EMAIL='${CADDY_EMAIL}' GHCR_USERNAME='${GHCR_USERNAME}' GHCR_TOKEN='${GHCR_TOKEN}' bash -s" <<'REMOTE_SCRIPT'
+          set -euo pipefail
+          cd /opt/legend
+          echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
+          HETZNER_DOMAIN="$HETZNER_DOMAIN" CADDY_EMAIL="$CADDY_EMAIL" docker compose -f docker-compose.hetzner.yml pull
+          HETZNER_DOMAIN="$HETZNER_DOMAIN" CADDY_EMAIL="$CADDY_EMAIL" docker compose -f docker-compose.hetzner.yml up -d
+          docker image prune -f
+          REMOTE_SCRIPT
         env:
+          HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
+          HETZNER_USER: ${{ secrets.HETZNER_USER }}
+          HETZNER_PORT: ${{ secrets.HETZNER_PORT || 22 }}
           HETZNER_DOMAIN: ${{ secrets.HETZNER_DOMAIN }}
           CADDY_EMAIL: ${{ secrets.CADDY_EMAIL }}
           GHCR_USERNAME: ${{ github.actor }}
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          host: ${{ secrets.HETZNER_HOST }}
-          username: ${{ secrets.HETZNER_USER }}
-          key: ${{ secrets.HETZNER_SSH_KEY }}
-          port: ${{ secrets.HETZNER_PORT || 22 }}
-          envs: HETZNER_DOMAIN,CADDY_EMAIL,GHCR_USERNAME,GHCR_TOKEN
-          script: |
-            set -euo pipefail
-            mkdir -p /opt/legend
-            cd /opt/legend
-            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
-            HETZNER_DOMAIN="$HETZNER_DOMAIN" \
-            CADDY_EMAIL="$CADDY_EMAIL" \
-              docker compose -f docker-compose.hetzner.yml pull
-            HETZNER_DOMAIN="$HETZNER_DOMAIN" \
-            CADDY_EMAIL="$CADDY_EMAIL" \
-              docker compose -f docker-compose.hetzner.yml up -d
-            docker image prune -f
