@@ -96,12 +96,13 @@ Required:
 
 ```text
 HETZNER_HOST       # server IP
-HETZNER_USER       # deploy
 HETZNER_SSH_KEY    # private key allowed for deploy user
 HETZNER_DOMAIN     # app.legenddesk.com
 CADDY_EMAIL        # email for Let's Encrypt notices
 VITE_POSTHOG_KEY   # existing PostHog project key
 ```
+
+The workflow deploys as the fixed server user `deploy`, so `HETZNER_USER` is not required.
 
 Optional:
 

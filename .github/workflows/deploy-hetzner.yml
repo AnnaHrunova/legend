@@ -72,7 +72,7 @@ jobs:
             'whoami && mkdir -p /opt/legend'
         env:
           HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
-          HETZNER_USER: ${{ secrets.HETZNER_USER }}
+          HETZNER_USER: deploy
           HETZNER_PORT: ${{ secrets.HETZNER_PORT || 22 }}
 
       - name: Copy compose file to server
@@ -87,7 +87,7 @@ jobs:
             "${HETZNER_USER}@${HETZNER_HOST}:/opt/legend/docker-compose.hetzner.yml"
         env:
           HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
-          HETZNER_USER: ${{ secrets.HETZNER_USER }}
+          HETZNER_USER: deploy
           HETZNER_PORT: ${{ secrets.HETZNER_PORT || 22 }}
 
       - name: Deploy on server
@@ -109,7 +109,7 @@ jobs:
           REMOTE_SCRIPT
         env:
           HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
-          HETZNER_USER: ${{ secrets.HETZNER_USER }}
+          HETZNER_USER: deploy
           HETZNER_PORT: ${{ secrets.HETZNER_PORT || 22 }}
           HETZNER_DOMAIN: ${{ secrets.HETZNER_DOMAIN }}
           CADDY_EMAIL: ${{ secrets.CADDY_EMAIL }}
