@@ -4,6 +4,32 @@ This is a separate deployment path for `app.legenddesk.com`.
 
 It does not replace or modify the existing GitHub Pages prototype deployment.
 
+## Current State
+
+```text
+Browser -> Cloudflare proxy -> Hetzner -> Caddy -> Legend frontend
+```
+
+Production URL:
+
+```text
+https://app.legenddesk.com
+```
+
+Hetzner server:
+
+```text
+65.109.29.172
+```
+
+Cloudflare:
+
+```text
+SSL/TLS mode: Full (strict)
+app.legenddesk.com: Proxied
+api.legenddesk.com: reserved for future backend
+```
+
 ## What Gets Deployed
 
 The current Vite frontend is built into a Docker image and served by Caddy.
@@ -31,7 +57,7 @@ After Hetzner provides the server IP, configure Cloudflare DNS:
 Type: A
 Name: app
 Value: HETZNER_SERVER_IP
-Proxy: DNS only
+Proxy: Proxied
 ```
 
 This creates:
@@ -40,7 +66,9 @@ This creates:
 app.legenddesk.com
 ```
 
-Keep `api.legenddesk.com` reserved for the future backend.
+For first-time certificate debugging, `DNS only` is acceptable. After Caddy has issued a valid Let's Encrypt certificate, use Cloudflare proxy with SSL/TLS mode set to `Full (strict)`.
+
+Keep `api.legenddesk.com` reserved for the future backend. It can point to the same Hetzner IP, but it is not active until the backend service and Caddy route exist.
 
 ## Server Bootstrap
 
@@ -130,6 +158,64 @@ That keeps manual server checks clean:
 ```bash
 cd /opt/legend
 docker compose -f docker-compose.hetzner.yml ps
+```
+
+The workflow also performs a public health check:
+
+```bash
+curl -fsSI https://app.legenddesk.com
+```
+
+The deploy fails if the public site does not return a successful response.
+
+## Server Operations
+
+SSH into the server:
+
+```bash
+ssh -i ~/.ssh/legend_hetzner deploy@65.109.29.172
+```
+
+Check running containers:
+
+```bash
+cd /opt/legend
+docker compose -f docker-compose.hetzner.yml ps
+```
+
+View frontend/Caddy logs:
+
+```bash
+cd /opt/legend
+docker compose -f docker-compose.hetzner.yml logs -f legend-frontend
+```
+
+Restart the frontend:
+
+```bash
+cd /opt/legend
+docker compose -f docker-compose.hetzner.yml restart legend-frontend
+```
+
+Pull and restart manually, if GitHub Actions is unavailable:
+
+```bash
+cd /opt/legend
+docker compose -f docker-compose.hetzner.yml pull
+docker compose -f docker-compose.hetzner.yml up -d
+```
+
+Check public response from any machine:
+
+```bash
+curl -I https://app.legenddesk.com
+```
+
+Expected response includes:
+
+```text
+HTTP/2 200
+server: cloudflare
 ```
 
 ## Notes

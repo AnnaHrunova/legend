@@ -116,3 +116,20 @@ jobs:
           CADDY_EMAIL: ${{ secrets.CADDY_EMAIL }}
           GHCR_USERNAME: ${{ github.actor }}
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify public site
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3 4 5; do
+            if curl -fsSI "https://${HETZNER_DOMAIN}" >/dev/null; then
+              curl -fsSI "https://${HETZNER_DOMAIN}" | sed -n '1,12p'
+              exit 0
+            fi
+
+            echo "Site is not ready yet, retrying in 10 seconds (${attempt}/5)..."
+            sleep 10
+          done
+
+          curl -fsSI "https://${HETZNER_DOMAIN}"
+        env:
+          HETZNER_DOMAIN: ${{ secrets.HETZNER_DOMAIN }}

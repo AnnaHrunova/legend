@@ -676,9 +676,28 @@ https://eu.i.posthog.com
 
 ## Hetzner Deployment
 
-Hetzner deployment is prepared as a separate manual path for `app.legenddesk.com`.
+Hetzner deployment is a separate manual path for `app.legenddesk.com`.
 
 It does not replace the existing GitHub Pages prototype deployment.
+
+Current live path:
+
+```text
+Browser -> Cloudflare proxy -> Hetzner -> Caddy -> Legend frontend
+```
+
+Production frontend:
+
+```text
+https://app.legenddesk.com
+```
+
+Cloudflare should use:
+
+```text
+SSL/TLS mode: Full (strict)
+app.legenddesk.com: Proxied
+```
 
 Files:
 
@@ -697,6 +716,7 @@ How it works:
 3. The workflow SSHes into the Hetzner server.
 4. Docker Compose pulls and runs the frontend container.
 5. Caddy serves the app and manages HTTPS automatically.
+6. The workflow checks `https://app.legenddesk.com` after deployment.
 
 The workflow is manual-only:
 
@@ -715,6 +735,8 @@ Future backend domain:
 ```text
 api.legenddesk.com
 ```
+
+`api.legenddesk.com` is reserved but not active yet.
 
 Server setup, DNS, and required GitHub secrets are documented in:
 
