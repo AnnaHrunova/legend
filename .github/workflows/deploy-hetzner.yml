@@ -93,13 +93,23 @@ jobs:
       - name: Deploy on server
         run: |
           set -euo pipefail
+          normalize_domain() {
+            printf '%s' "$1" | tr -d '\r\n\t ' | sed -E 's#^https?://##; s#/$##'
+          }
+
+          HETZNER_DOMAIN_CLEAN="$(normalize_domain "${HETZNER_DOMAIN}")"
+          if [ -z "${HETZNER_DOMAIN_CLEAN}" ]; then
+            echo "HETZNER_DOMAIN is empty after normalization"
+            exit 1
+          fi
+
           ssh -i ~/.ssh/hetzner_deploy \
             -p "${HETZNER_PORT}" \
             -o BatchMode=yes \
             -o IdentitiesOnly=yes \
             -o StrictHostKeyChecking=accept-new \
             "${HETZNER_USER}@${HETZNER_HOST}" \
-            "HETZNER_DOMAIN='${HETZNER_DOMAIN}' CADDY_EMAIL='${CADDY_EMAIL}' GHCR_USERNAME='${GHCR_USERNAME}' GHCR_TOKEN='${GHCR_TOKEN}' bash -s" <<'REMOTE_SCRIPT'
+            "HETZNER_DOMAIN='${HETZNER_DOMAIN_CLEAN}' CADDY_EMAIL='${CADDY_EMAIL}' GHCR_USERNAME='${GHCR_USERNAME}' GHCR_TOKEN='${GHCR_TOKEN}' bash -s" <<'REMOTE_SCRIPT'
           set -euo pipefail
           cd /opt/legend
           printf 'HETZNER_DOMAIN=%s\nCADDY_EMAIL=%s\n' "$HETZNER_DOMAIN" "$CADDY_EMAIL" > .env
@@ -120,9 +130,20 @@ jobs:
       - name: Verify public site
         run: |
           set -euo pipefail
+          normalize_domain() {
+            printf '%s' "$1" | tr -d '\r\n\t ' | sed -E 's#^https?://##; s#/$##'
+          }
+
+          DOMAIN="$(normalize_domain "${HETZNER_DOMAIN}")"
+          if [ -z "${DOMAIN}" ]; then
+            echo "HETZNER_DOMAIN is empty after normalization"
+            exit 1
+          fi
+
+          SITE_URL="https://${DOMAIN}"
           for attempt in 1 2 3 4 5; do
-            if curl -fsSI "https://${HETZNER_DOMAIN}" >/dev/null; then
-              curl -fsSI "https://${HETZNER_DOMAIN}" | sed -n '1,12p'
+            if curl -fsSI "${SITE_URL}" >/dev/null; then
+              curl -fsSI "${SITE_URL}" | sed -n '1,12p'
               exit 0
             fi
 
@@ -130,6 +151,6 @@ jobs:
             sleep 10
           done
 
-          curl -fsSI "https://${HETZNER_DOMAIN}"
+          curl -fsSI "${SITE_URL}"
         env:
           HETZNER_DOMAIN: ${{ secrets.HETZNER_DOMAIN }}
