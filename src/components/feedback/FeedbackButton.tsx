@@ -1,4 +1,4 @@
-import { MessageSquare, X } from 'lucide-react';
+import { Megaphone, X } from 'lucide-react';
 import { useEffect, useId, useRef, useState } from 'react';
 import { track } from '../../analytics/analytics';
 import type { FeedbackContext } from '../../analytics/feedbackContexts';
@@ -119,6 +119,11 @@ export function FeedbackButton({
     window.setTimeout(() => close(), 900);
   }
 
+  const triggerTitle =
+    variant === 'icon'
+      ? `Leave feedback about this app component${componentLabel ? `: ${componentLabel}` : ''}`
+      : label;
+
   return (
     <>
       <button
@@ -127,10 +132,10 @@ export function FeedbackButton({
         onClick={() => {
           setIsOpen(true);
         }}
-        aria-label={label}
-        title={label}
+        aria-label={triggerTitle}
+        title={triggerTitle}
       >
-        <MessageSquare size={variant === 'floating' ? 16 : 14} />
+        <Megaphone size={variant === 'floating' ? 16 : 15} strokeWidth={2.2} />
         {variant !== 'icon' && <span>{label}</span>}
       </button>
 
@@ -146,7 +151,6 @@ export function FeedbackButton({
             <div className="feedback-modal-header">
               <div>
                 <h2 id={titleId}>Leave feedback</h2>
-                <span>About: {componentLabel ?? context}</span>
               </div>
               <button type="button" onClick={close} aria-label="Close feedback">
                 <X size={16} />

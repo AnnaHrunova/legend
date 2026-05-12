@@ -213,6 +213,8 @@ a {
 }
 
 .feedback-trigger {
+  min-width: 0;
+  min-height: 30px;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: #ffffff;
@@ -226,6 +228,13 @@ a {
   white-space: nowrap;
 }
 
+.feedback-trigger svg {
+  width: 15px;
+  height: 15px;
+  display: block;
+  flex: 0 0 auto;
+}
+
 .feedback-trigger:hover {
   border-color: #9ecac3;
   color: #0f766e;
@@ -236,10 +245,13 @@ a {
   padding: 0 9px;
 }
 
-.feedback-icon {
+button.feedback-trigger.feedback-icon {
   width: 30px;
   height: 30px;
-  padding: 0;
+  min-width: 30px;
+  min-height: 30px !important;
+  padding: 0 !important;
+  flex: 0 0 auto;
 }
 
 .feedback-floating {
@@ -302,14 +314,6 @@ a {
 .feedback-modal-header h2 {
   margin: 0;
   font-size: 18px;
-}
-
-.feedback-modal-header span {
-  display: block;
-  margin-top: 4px;
-  color: var(--text-muted);
-  font-size: 12px;
-  font-weight: 800;
 }
 
 .feedback-modal-header button {
@@ -424,6 +428,39 @@ a {
   align-items: center;
   gap: 10px;
   min-width: 172px;
+}
+
+.current-user strong {
+  max-width: 190px;
+  overflow: hidden;
+  color: #172033;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.current-user-anonymous strong {
+  color: #46566c;
+}
+
+.agent-avatar {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 36px;
+  border-radius: 50%;
+}
+
+.agent-avatar-anonymous {
+  border: 1px solid #d4deea;
+  background: #f4f7fb;
+  color: #66758a;
+}
+
+.agent-avatar-identified {
+  border: 1px solid #b7ded8;
+  background: #d9f3ee;
+  color: #0f766e;
 }
 
 .tester-profile-trigger {
@@ -1131,6 +1168,7 @@ textarea:focus {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
+  align-items: start;
 }
 
 .composer {

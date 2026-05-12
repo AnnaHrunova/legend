@@ -1,5 +1,6 @@
 import {
   BarChart3,
+  Bot,
   Flame,
   Inbox,
   LayoutDashboard,
@@ -7,10 +8,13 @@ import {
   Search,
   Settings,
   UsersRound,
+  VenetianMask,
 } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { FeedbackButton } from './feedback/FeedbackButton';
 import { TesterProfileControl } from './tester/TesterProfileControl';
+import { getTesterProfile, type TesterProfile } from '../analytics/testerProfile';
 import { currentUser } from '../data/mockUsers';
 import { applyTicketView } from '../domain/ticketViews';
 import { useTickets } from '../state/ticketStore';
@@ -137,13 +141,7 @@ export function AppLayout() {
             Create ticket
           </button>
           <TesterProfileControl />
-          <div className="current-user" title={currentUser.email}>
-            <span className="avatar">{currentUser.name.slice(0, 2).toUpperCase()}</span>
-            <div>
-              <strong>{currentUser.name}</strong>
-              <span>{currentUser.team}</span>
-            </div>
-          </div>
+          <SupportAgentIdentity />
         </header>
 
         <main className="main-content">
@@ -151,6 +149,42 @@ export function AppLayout() {
         </main>
       </div>
       <FeedbackButton context="global" variant="floating" label="Feedback" />
+    </div>
+  );
+}
+
+function SupportAgentIdentity() {
+  const [profile, setProfile] = useState<TesterProfile | undefined>(() => getTesterProfile());
+
+  useEffect(() => {
+    const onProfileChanged = () => setProfile(getTesterProfile());
+    window.addEventListener('legend-desk-tester-profile-changed', onProfileChanged);
+    return () => window.removeEventListener('legend-desk-tester-profile-changed', onProfileChanged);
+  }, []);
+
+  if (!profile) {
+    return (
+      <div className="current-user current-user-anonymous" title="Anonymous prototype tester">
+        <span className="agent-avatar agent-avatar-anonymous" aria-hidden="true">
+          <VenetianMask size={18} />
+        </span>
+        <div>
+          <strong>Anonymous</strong>
+          <span>Support agent</span>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="current-user current-user-identified" title={profile.email}>
+      <span className="agent-avatar agent-avatar-identified" aria-hidden="true">
+        <Bot size={18} />
+      </span>
+      <div>
+        <strong>{profile.fullName}</strong>
+        <span>{profile.role}</span>
+      </div>
     </div>
   );
 }
