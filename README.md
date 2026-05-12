@@ -256,6 +256,49 @@ Feedback uses the same `track()` path, so `feedback_submitted` events receive te
 
 The prototype includes support-focused workflow tools. These are intentionally not dashboards or backend systems; they exist to validate how agents handle real tickets day to day.
 
+## AI Zendesk Agent
+
+Legend includes a local AI-powered support tester for prototype validation.
+The agent uses Playwright to inspect the deployed app and an OpenAI model to act
+as a senior Zendesk power user. It writes evidence-backed findings for Codex
+triage and prepares a separate fix prompt that should only be used after owner
+confirmation.
+
+Run:
+
+```bash
+npm run audit:ai:zendesk:prod
+```
+
+The runner requires `OPENAI_API_KEY` in the environment or `.env.local`. The
+default model is `gpt-5.5`; override it with `OPENAI_MODEL` or `--model`.
+Only `triage` mode is supported locally right now.
+
+The agent opens `https://app.legenddesk.com`, explores the UI, captures
+screenshots, and writes:
+
+- `.legend-ai-audits/latest-ai-summary.md`
+- `.legend-ai-audits/latest-ai.md`
+- `.legend-ai-audits/latest-ai.json`
+- `.legend-ai-audits/latest-ai-codex-prompt.md`
+- `.legend-ai-audits/latest-ai-fix-prompt.md`
+- `.legend-ai-audits/screenshots/*.png`
+
+This is intentionally a triage-first agent, not an autonomous product owner.
+Bagutka can show the short summary in Telegram and ask for confirmation before
+routing the fix prompt through Nexus into the `legend` project thread. The fix
+prompt instructs Codex to create a new branch from `origin/main`, implement only
+safe evidence-backed fixes, update docs when behavior changes, run local checks,
+commit, push the branch, and deploy that exact branch to production through the
+Hetzner workflow. Main merge and PR creation still require a separate explicit
+ask after the deployed branch is reviewed.
+
+Bagutka relays the fix turn progress through explicit milestones:
+
+- `LEGEND FIX STATUS 1/3: code ready`
+- `LEGEND FIX STATUS 2/3: code pushed`
+- `LEGEND FIX STATUS 3/3: branch deployed`
+
 ### Macros
 
 Macros are reusable reply templates for common support situations such as eSIM setup, refunds, payment failures, missing documents, notifications, login reset, known issue acknowledgement, and ticket closure.
