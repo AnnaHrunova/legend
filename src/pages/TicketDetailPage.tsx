@@ -7,7 +7,6 @@ import { FeedbackButton } from '../components/feedback/FeedbackButton';
 import { formatDate } from '../components/format';
 import { knownIssues } from '../data/mockKnownIssues';
 import { macros } from '../data/mockMacros';
-import { agents, currentUser } from '../data/mockUsers';
 import {
   PRIORITIES,
   STATUSES,
@@ -21,12 +20,15 @@ import {
   type Ticket,
   type TicketStatus,
 } from '../domain/types';
+import { useActiveAgent, useAssignableAgents } from '../state/activeAgent';
 import { useTickets } from '../state/ticketStore';
 
 export function TicketDetailPage() {
   const { ticketId } = useParams();
   const navigate = useNavigate();
   const { tickets, getTicket, updateTicket, assignToCurrentUser, addInternalNote, addPublicReply } = useTickets();
+  const activeAgent = useActiveAgent();
+  const assignableAgents = useAssignableAgents();
   const ticket = ticketId ? getTicket(ticketId) : undefined;
   const [reply, setReply] = useState('');
   const [appliedMacro, setAppliedMacro] = useState<AppliedMacroState | undefined>();
@@ -118,7 +120,7 @@ export function TicketDetailPage() {
   }
 
   function changeAssignee(agentId: string) {
-    const agent = agents.find((item) => item.id === agentId);
+    const agent = assignableAgents.find((item) => item.id === agentId);
     const toAssignee = agent?.name ?? 'Unassigned';
     if (toAssignee === activeTicket.assigneeName) return;
     updateTicket(
@@ -297,12 +299,12 @@ export function TicketDetailPage() {
             />
             <button
               onClick={() => {
-                if (ticket.assigneeName === currentUser.name) return;
+                if (ticket.assigneeName === activeAgent.name) return;
                 assignToCurrentUser([ticket.id]);
                 track('ticket_assignee_changed', {
                   ticketId: ticket.id,
                   fromAssignee: ticket.assigneeName,
-                  toAssignee: currentUser.name,
+                  toAssignee: activeAgent.name,
                 });
               }}
             >
@@ -559,7 +561,7 @@ export function TicketDetailPage() {
             </div>
             <select value={ticket.assigneeId ?? ''} onChange={(event) => changeAssignee(event.target.value)}>
               <option value="">Unassigned</option>
-              {agents.map((agent) => (
+              {assignableAgents.map((agent) => (
                 <option key={agent.id} value={agent.id}>
                   {agent.name}
                 </option>

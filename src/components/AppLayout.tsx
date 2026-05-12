@@ -15,8 +15,8 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { FeedbackButton } from './feedback/FeedbackButton';
 import { TesterProfileControl } from './tester/TesterProfileControl';
 import { getTesterProfile, type TesterProfile } from '../analytics/testerProfile';
-import { currentUser } from '../data/mockUsers';
 import { applyTicketView } from '../domain/ticketViews';
+import { useActiveAgent } from '../state/activeAgent';
 import { useTickets } from '../state/ticketStore';
 import { useTicketViews } from '../state/viewStore';
 
@@ -32,10 +32,11 @@ export function AppLayout() {
   const navigate = useNavigate();
   const { tickets } = useTickets();
   const { systemViews, customViews } = useTicketViews();
+  const activeAgent = useActiveAgent();
 
   function viewCount(viewId: string) {
     const view = [...systemViews, ...customViews].find((item) => item.id === viewId);
-    return view ? applyTicketView(tickets, view, currentUser.id).length : 0;
+    return view ? applyTicketView(tickets, view, activeAgent.id).length : 0;
   }
 
   return (

@@ -6,7 +6,7 @@ import { EmptyState } from '../components/EmptyState';
 import { FeedbackButton } from '../components/feedback/FeedbackButton';
 import { formatDate, formatShortDate } from '../components/format';
 import { defaultTicketColumns } from '../data/mockViews';
-import { agents, currentUser } from '../data/mockUsers';
+import { agents } from '../data/mockUsers';
 import {
   applyTicketView,
   ensureVisibleColumns,
@@ -39,6 +39,7 @@ import {
   type TicketView,
   type TicketViewFilters,
 } from '../domain/types';
+import { useActiveAgent, useAssignableAgents } from '../state/activeAgent';
 import { useTickets } from '../state/ticketStore';
 import { useTicketViews } from '../state/viewStore';
 
@@ -87,6 +88,7 @@ export function InboxPage() {
   const { tickets, assignToCurrentUser, bulkUpdatePriority, bulkUpdateStatus, bulkAddTag } =
     useTickets();
   const { getView, createView, updateView, duplicateView, deleteView } = useTicketViews();
+  const activeAgent = useActiveAgent();
   const [query, setQuery] = useState(searchParams.get('search') ?? '');
   const [selected, setSelected] = useState<string[]>([]);
   const [bulkTag, setBulkTag] = useState('');
@@ -119,7 +121,7 @@ export function InboxPage() {
 
   const visibleTickets = useMemo(() => {
     if (!view) return [];
-    return searchTickets(applyTicketView(tickets, view, currentUser.id), query).filter((ticket) =>
+    return searchTickets(applyTicketView(tickets, view, activeAgent.id), query).filter((ticket) =>
       matchesInboxFilters(ticket, {
         source: sourceFilter,
         reviewSource: reviewSourceFilter,
@@ -128,7 +130,7 @@ export function InboxPage() {
         severity: severityFilter,
       }),
     );
-  }, [platformFilter, query, ratingFilter, reviewSourceFilter, severityFilter, sourceFilter, tickets, view]);
+  }, [activeAgent.id, platformFilter, query, ratingFilter, reviewSourceFilter, severityFilter, sourceFilter, tickets, view]);
 
   const columns = ensureVisibleColumns(view?.visibleColumns ?? defaultTicketColumns);
   const chips = view ? getViewFilterChips(view) : [];
@@ -611,7 +613,8 @@ function ViewEditor({
     changeFlags: { filters: boolean; sort: boolean; columns: boolean },
   ) => void;
 }) {
-  const initial = toFormState(baseView, mode);
+  const assignableAgents = useAssignableAgents();
+  const initial = toFormState(baseView, mode, assignableAgents[0]?.id ?? agents[0].id);
   const [form, setForm] = useState<ViewFormState>(initial);
 
   function update<Key extends keyof ViewFormState>(key: Key, value: ViewFormState[Key]) {
@@ -753,7 +756,7 @@ function ViewEditor({
             <label>
               <span>Agent</span>
               <select value={form.assigneeId} onChange={(event) => update('assigneeId', event.target.value)}>
-                {agents.map((agent) => (
+                {assignableAgents.map((agent) => (
                   <option key={agent.id} value={agent.id}>
                     {agent.name}
                   </option>
@@ -877,7 +880,7 @@ function MultiSelect<T extends string>({
   );
 }
 
-function toFormState(view: TicketView, mode: 'create' | 'edit'): ViewFormState {
+function toFormState(view: TicketView, mode: 'create' | 'edit', defaultAgentId: string): ViewFormState {
   const assignee = view.filters.assignee ?? { mode: 'any' };
 
   return {
@@ -887,7 +890,7 @@ function toFormState(view: TicketView, mode: 'create' | 'edit'): ViewFormState {
     statuses: view.filters.statuses ?? [],
     priorities: view.filters.priorities ?? [],
     assigneeMode: assignee.mode,
-    assigneeId: assignee.mode === 'is' ? assignee.agentId : agents[0].id,
+    assigneeId: assignee.mode === 'is' ? assignee.agentId : defaultAgentId,
     teams: view.filters.teams ?? [],
     tagContains: view.filters.tagContains ?? '',
     companyIs: view.filters.companyIs ?? '',

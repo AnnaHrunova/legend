@@ -2,12 +2,19 @@ import { useEffect, useMemo } from 'react';
 import { track } from '../analytics/analytics';
 import { PriorityBadge } from '../components/Badges';
 import { FeedbackButton } from '../components/feedback/FeedbackButton';
+import { systemTicketViews } from '../data/mockViews';
+import { applyTicketView } from '../domain/ticketViews';
 import { PRIORITIES, TEAMS } from '../domain/types';
+import { useActiveAgent } from '../state/activeAgent';
 import { useTickets } from '../state/ticketStore';
 
 export function ReportsPage() {
   const { tickets } = useTickets();
-  const solvedThisWeek = tickets.filter((ticket) => ticket.status === 'Solved' || ticket.status === 'Closed').length;
+  const activeAgent = useActiveAgent();
+  const solvedThisWeekView = systemTicketViews.find((view) => view.id === 'solved-this-week');
+  const solvedThisWeek = solvedThisWeekView
+    ? applyTicketView(tickets, solvedThisWeekView, activeAgent.id).length
+    : 0;
   const openTickets = tickets.filter((ticket) => !['Solved', 'Closed'].includes(ticket.status)).length;
   const slaBreaches = tickets.filter((ticket) => ticket.sla.state === 'Breached').length;
 
@@ -51,7 +58,7 @@ export function ReportsPage() {
 
       <div className="metric-grid">
         <Metric label="Open tickets" value={openTickets} detail="Active workload" />
-        <Metric label="Solved this week" value={solvedThisWeek} detail="Mock rolling week" />
+        <Metric label="Solved this week" value={solvedThisWeek} detail="Matches system view" />
         <Metric label="Avg. first response" value="1h 42m" detail="Across all queues" />
         <Metric label="SLA breaches" value={slaBreaches} detail="Needs review" tone="danger" />
       </div>
