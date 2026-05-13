@@ -31,19 +31,145 @@ Local outputs:
 - `.legend-ai-audits/latest-ai-fix-prompt.md`
 - `.legend-ai-audits/screenshots/*.png`
 
+Local audit artifacts are ignored by git. Do not commit `.legend-ai-audits`,
+screenshots, `.env`, `.env.local`, or temporary run files.
+
+## Hetzner Runner
+
+The production runner is on-demand and runs on Hetzner, not on a developer
+laptop.
+
+GitHub Actions entrypoint:
+
+```text
+.github/workflows/legend-ai-zendesk-agent.yml
+```
+
+Server runner script:
+
+```text
+/opt/legend/ai-zendesk-agent/bin/run-ai-zendesk-agent.sh
+```
+
+Source-controlled script copied to Hetzner by the workflow:
+
+```text
+ops/hetzner/run-ai-zendesk-agent.sh
+```
+
+Server layout:
+
+```text
+/opt/legend/ai-zendesk-agent/
+  bin/run-ai-zendesk-agent.sh
+  env/legend-ai-zendesk-agent.env
+  env/run.env
+  repo/
+  runs/<run-id>/
+  runs/<run-id>.tar.gz
+  latest/
+  logs/<run-id>.log
+```
+
+The workflow SSHes to the existing Hetzner host using the same deploy secrets
+as the frontend deployment, then runs the agent inside the official Playwright
+Docker image. This keeps Node and browser dependencies out of the host OS and
+uses the Docker setup already required by the Hetzner frontend deployment.
+
+For normal Bagutka/GitHub Actions runs, the workflow checks out the selected
+branch, uploads a source tarball to Hetzner, and the server extracts that exact
+source into `repo/`. The server does not need local `git` for the normal path.
+The script can still fall back to `git clone` for manual server-only reruns when
+no source tarball is provided.
+
+Required GitHub Actions secrets:
+
+- `HETZNER_HOST`
+- `HETZNER_PORT` (optional, defaults to `22`)
+- `HETZNER_SSH_KEY`
+- `OPENAI_API_KEY`
+
+Optional GitHub Actions secret:
+
+- `OPENAI_MODEL` (defaults to `gpt-5.5`)
+
+The workflow writes `OPENAI_API_KEY` and `OPENAI_MODEL` to
+`/opt/legend/ai-zendesk-agent/env/legend-ai-zendesk-agent.env` with `600`
+permissions. Secrets are not stored in git.
+
+Manual trigger:
+
+```bash
+gh workflow run legend-ai-zendesk-agent.yml \
+  --repo AnnaHrunova/legend \
+  --ref codex/ai-zendesk-agent \
+  -f branch=codex/ai-zendesk-agent \
+  -f base_url=https://app.legenddesk.com \
+  -f mode=triage \
+  -f max_steps=8
+```
+
+Optional model override for one run:
+
+```bash
+gh workflow run legend-ai-zendesk-agent.yml \
+  --repo AnnaHrunova/legend \
+  --ref codex/ai-zendesk-agent \
+  -f branch=codex/ai-zendesk-agent \
+  -f model=gpt-5.5
+```
+
+Artifacts:
+
+- Hetzner latest summary: `/opt/legend/ai-zendesk-agent/latest/latest-ai-summary.md`
+- Hetzner latest full report: `/opt/legend/ai-zendesk-agent/latest/latest-ai.md`
+- Hetzner latest JSON: `/opt/legend/ai-zendesk-agent/latest/latest-ai.json`
+- Hetzner latest Codex prompt: `/opt/legend/ai-zendesk-agent/latest/latest-ai-codex-prompt.md`
+- Hetzner latest fix prompt: `/opt/legend/ai-zendesk-agent/latest/latest-ai-fix-prompt.md`
+- GitHub Actions artifact: `latest-ai-report`
+
+Logs:
+
+```bash
+ssh deploy@<hetzner-host> 'tail -n 200 /opt/legend/ai-zendesk-agent/logs/<run-id>.log'
+ssh deploy@<hetzner-host> 'ls -lt /opt/legend/ai-zendesk-agent/logs | head'
+```
+
+Manual rerun on the server after a workflow has installed the runner and env:
+
+```bash
+ssh deploy@<hetzner-host> \
+  'set -a && . /opt/legend/ai-zendesk-agent/env/run.env && set +a && /opt/legend/ai-zendesk-agent/bin/run-ai-zendesk-agent.sh'
+```
+
+End-to-end check:
+
+1. Run `legend-ai-zendesk-agent.yml` through GitHub Actions.
+2. Wait for the workflow to finish.
+3. Open the `latest-ai-report` artifact.
+4. Confirm it contains:
+   - `latest-ai-summary.md`
+   - `latest-ai.md`
+   - `latest-ai.json`
+   - `latest-ai-codex-prompt.md`
+   - `latest-ai-fix-prompt.md`
+   - `screenshots/*.png`
+5. Confirm the workflow summary contains the short summary Bagutka should show.
+
 ## Bagutka Flow
 
-`/legendaitest` runs the local agent and stores one pending audit for the owner
-chat.
+`/legendaitest` should dispatch `legend-ai-zendesk-agent.yml` and store one
+pending audit for the owner chat.
 
 Expected Telegram flow:
 
-1. Bagutka runs the agent.
+1. Bagutka starts the GitHub Actions workflow.
 2. Bagutka returns a short summary in Telegram.
 3. Bagutka asks for confirmation with `Fix in new branch` and `Skip`.
 4. `Skip` consumes the pending audit without sending anything to Codex.
-5. `Fix in new branch` sends `.legend-ai-audits/latest-ai-fix-prompt.md` into
-   the Legend `Agent findings` thread through Nexus.
+5. `Fix in new branch` sends `latest-ai-fix-prompt.md` from the workflow
+   artifact or Hetzner latest directory into the Legend `Agent findings` thread
+   through Nexus.
 
 The fix prompt tells Codex to fetch latest `origin/main`, create a new branch,
 implement only safe evidence-backed fixes, update docs when behavior changes,
@@ -61,64 +187,25 @@ therefore requires explicit milestone messages:
 If a milestone fails, Codex must stop and send `LEGEND FIX FAILED: <stage> -
 <specific reason>`.
 
-## Prompt For Hetzner Setup Thread
+## Fix Flow
 
-Use this in the existing Legend thread that already has Hetzner and GitHub
-Actions context:
+The runner remains triage-only. Fixes start only after human approval in
+Bagutka.
 
-```text
-We have a local AI Zendesk agent for Legend at:
-/Users/anna/IdeaProjects/private/legend/scripts/ai-zendesk-agent.mjs
+Approved fix flow:
 
-Current local contract:
-- command: npm run audit:ai:zendesk:prod
-- mode: triage only
-- model: gpt-5.5 via OPENAI_MODEL
-- required secret: OPENAI_API_KEY
-- target URL: https://app.legenddesk.com
-- outputs:
-  - .legend-ai-audits/latest-ai-summary.md
-  - .legend-ai-audits/latest-ai.md
-  - .legend-ai-audits/latest-ai.json
-  - .legend-ai-audits/latest-ai-codex-prompt.md
-  - .legend-ai-audits/latest-ai-fix-prompt.md
-  - .legend-ai-audits/screenshots/*.png
+1. Codex fetches latest `origin/main`.
+2. Codex creates a fresh branch from `origin/main`.
+3. Codex fixes only confirmed evidence-backed findings.
+4. Codex runs `npm run lint` and `npm run build`.
+5. Codex commits and pushes the fix branch.
+6. Codex dispatches the existing Hetzner deploy workflow for that exact branch:
 
-Goal:
-Prepare production-grade Hetzner deployment for this runner, but keep the same
-approval model:
-
-1. Bagutka receives /legendaitest.
-2. The AI Zendesk agent runs against https://app.legenddesk.com.
-3. The runner returns a short human summary to Bagutka.
-4. Bagutka asks the owner to confirm Fix in new branch or Skip.
-5. Only after explicit confirmation, the fix prompt is routed to the Legend
-   Agent findings thread.
-6. The fixing Codex task must create a fresh branch from latest origin/main,
-   implement only evidence-backed fixes, update docs when needed, and run
-   npm run lint plus npm run build.
-7. The fixing Codex task must commit the fixes, push the branch, and dispatch
-   `.github/workflows/deploy-hetzner.yml` with `--ref <branch>` so that exact
-   branch is deployed to production for human review.
-8. The fixing Codex task must report:
-   - `LEGEND FIX STATUS 1/3: code ready`
-   - `LEGEND FIX STATUS 2/3: code pushed`
-   - `LEGEND FIX STATUS 3/3: branch deployed`
-9. Main merge and PR creation remain separate explicit steps after the deployed
-   branch is reviewed.
-
-Please inspect existing Hetzner/GitHub Actions context in this thread and
-produce a clean implementation plan for:
-- server directory layout
-- systemd service/timer or long-running runner
-- env file location and permissions
-- Node 22 and Playwright browser dependencies
-- artifact retention for .legend-ai-audits
-- logs and failure reporting
-- how Bagutka should trigger the remote runner
-- how the result should return to Bagutka/Nexus without exposing secrets
-- rollback and health-check commands
-
-Do not implement yet. First return the proposed architecture and exact files
-that should be changed.
+```bash
+gh workflow run deploy-hetzner.yml \
+  --repo AnnaHrunova/legend \
+  --ref <fix-branch>
 ```
+
+Do not merge `main` automatically. Do not open a PR automatically unless the
+owner asks for it.

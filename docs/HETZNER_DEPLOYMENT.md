@@ -130,12 +130,19 @@ CADDY_EMAIL        # email for Let's Encrypt notices
 VITE_POSTHOG_KEY   # existing PostHog project key
 ```
 
+Required for the on-demand AI Zendesk Agent workflow:
+
+```text
+OPENAI_API_KEY     # used only by .github/workflows/legend-ai-zendesk-agent.yml
+```
+
 The workflow deploys as the fixed server user `deploy`, so `HETZNER_USER` is not required.
 
 Optional:
 
 ```text
 HETZNER_PORT       # defaults to 22
+OPENAI_MODEL       # defaults to gpt-5.5 for the AI Zendesk Agent
 ```
 
 ## Deploy
@@ -216,6 +223,53 @@ Expected response includes:
 ```text
 HTTP/2 200
 server: cloudflare
+```
+
+## AI Zendesk Agent Operations
+
+The AI Zendesk Agent is an on-demand Hetzner runner. It does not run on a
+schedule and does not deploy anything by itself.
+
+The GitHub Actions workflow uploads the selected branch as a source tarball, so
+the normal runner path only requires Docker on the Hetzner host. Node,
+Playwright, and browser dependencies run inside the Playwright Docker image.
+
+Run it through GitHub Actions:
+
+```bash
+gh workflow run legend-ai-zendesk-agent.yml \
+  --repo AnnaHrunova/legend \
+  --ref codex/ai-zendesk-agent \
+  -f branch=codex/ai-zendesk-agent \
+  -f base_url=https://app.legenddesk.com \
+  -f mode=triage \
+  -f max_steps=8
+```
+
+Server paths:
+
+```text
+/opt/legend/ai-zendesk-agent/env/legend-ai-zendesk-agent.env
+/opt/legend/ai-zendesk-agent/logs/
+/opt/legend/ai-zendesk-agent/runs/
+/opt/legend/ai-zendesk-agent/latest/
+```
+
+The env file is written by GitHub Actions from secrets and should remain mode
+`600`. Audit reports and screenshots stay out of git.
+
+View the latest run:
+
+```bash
+ssh -i ~/.ssh/legend_hetzner deploy@65.109.29.172 \
+  'ls -lt /opt/legend/ai-zendesk-agent/runs | head && cat /opt/legend/ai-zendesk-agent/latest/latest-ai-summary.md'
+```
+
+View logs:
+
+```bash
+ssh -i ~/.ssh/legend_hetzner deploy@65.109.29.172 \
+  'tail -n 200 /opt/legend/ai-zendesk-agent/logs/$(ls -t /opt/legend/ai-zendesk-agent/logs | head -1)'
 ```
 
 ## Notes
