@@ -42,8 +42,11 @@ laptop.
 GitHub Actions entrypoint:
 
 ```text
-.github/workflows/legend-ai-zendesk-agent.yml
+.github/workflows/deploy-hetzner.yml
 ```
+
+Use `operation=run_ai_zendesk_agent` for the audit runner. The default
+`operation=deploy_frontend` remains the normal frontend deployment path.
 
 Server runner script:
 
@@ -100,23 +103,25 @@ permissions. Secrets are not stored in git.
 Manual trigger:
 
 ```bash
-gh workflow run legend-ai-zendesk-agent.yml \
+gh workflow run deploy-hetzner.yml \
   --repo AnnaHrunova/legend \
   --ref codex/ai-zendesk-agent \
-  -f branch=codex/ai-zendesk-agent \
-  -f base_url=https://app.legenddesk.com \
-  -f mode=triage \
-  -f max_steps=8
+  -f operation=run_ai_zendesk_agent \
+  -f agent_branch=codex/ai-zendesk-agent \
+  -f agent_base_url=https://app.legenddesk.com \
+  -f agent_mode=triage \
+  -f agent_max_steps=8
 ```
 
 Optional model override for one run:
 
 ```bash
-gh workflow run legend-ai-zendesk-agent.yml \
+gh workflow run deploy-hetzner.yml \
   --repo AnnaHrunova/legend \
   --ref codex/ai-zendesk-agent \
-  -f branch=codex/ai-zendesk-agent \
-  -f model=gpt-5.5
+  -f operation=run_ai_zendesk_agent \
+  -f agent_branch=codex/ai-zendesk-agent \
+  -f agent_model=gpt-5.5
 ```
 
 Artifacts:
@@ -144,7 +149,7 @@ ssh deploy@<hetzner-host> \
 
 End-to-end check:
 
-1. Run `legend-ai-zendesk-agent.yml` through GitHub Actions.
+1. Run `deploy-hetzner.yml` with `operation=run_ai_zendesk_agent` through GitHub Actions.
 2. Wait for the workflow to finish.
 3. Open the `latest-ai-report` artifact.
 4. Confirm it contains:
@@ -158,8 +163,8 @@ End-to-end check:
 
 ## Bagutka Flow
 
-`/legendaitest` should dispatch `legend-ai-zendesk-agent.yml` and store one
-pending audit for the owner chat.
+`/legendaitest` should dispatch `deploy-hetzner.yml` with
+`operation=run_ai_zendesk_agent` and store one pending audit for the owner chat.
 
 Expected Telegram flow:
 

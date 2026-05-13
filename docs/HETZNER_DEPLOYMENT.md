@@ -133,7 +133,7 @@ VITE_POSTHOG_KEY   # existing PostHog project key
 Required for the on-demand AI Zendesk Agent workflow:
 
 ```text
-OPENAI_API_KEY     # used only by .github/workflows/legend-ai-zendesk-agent.yml
+OPENAI_API_KEY     # used only by deploy-hetzner.yml operation=run_ai_zendesk_agent
 ```
 
 The workflow deploys as the fixed server user `deploy`, so `HETZNER_USER` is not required.
@@ -237,13 +237,14 @@ Playwright, and browser dependencies run inside the Playwright Docker image.
 Run it through GitHub Actions:
 
 ```bash
-gh workflow run legend-ai-zendesk-agent.yml \
+gh workflow run deploy-hetzner.yml \
   --repo AnnaHrunova/legend \
   --ref codex/ai-zendesk-agent \
-  -f branch=codex/ai-zendesk-agent \
-  -f base_url=https://app.legenddesk.com \
-  -f mode=triage \
-  -f max_steps=8
+  -f operation=run_ai_zendesk_agent \
+  -f agent_branch=codex/ai-zendesk-agent \
+  -f agent_base_url=https://app.legenddesk.com \
+  -f agent_mode=triage \
+  -f agent_max_steps=8
 ```
 
 Server paths:
