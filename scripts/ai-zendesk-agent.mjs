@@ -184,6 +184,8 @@ async function runAgent(args) {
     mode: args.mode,
     baseUrl: args.baseUrl,
     model: args.model,
+    workspaceCwd: process.cwd(),
+    outDir: args.outDir,
     persona,
     visited,
     history,
@@ -437,6 +439,10 @@ async function writeReportFiles(result, outDir) {
   await writeFile(path.join(outDir, 'latest-ai-fix-prompt.md'), renderCodexFixPrompt(result));
 }
 
+function reportPath(result, fileName) {
+  return path.join(result.outDir, fileName);
+}
+
 function renderSummary(result) {
   const counts = countFindingsBySeverity(result.findings);
   const lines = [
@@ -497,7 +503,7 @@ function renderMarkdownReport(result) {
 
 function renderCodexPrompt(result) {
   const lines = [
-    'You are working in /Users/anna/IdeaProjects/private/legend.',
+    `You are working in ${result.workspaceCwd}.`,
     '',
     'An AI-powered Zendesk support lead agent audited the deployed Legend Desk prototype.',
     'Treat this as evidence-backed product validation, not as permission for broad rewrites.',
@@ -509,7 +515,7 @@ function renderCodexPrompt(result) {
     '',
     `Model: ${result.model}`,
     `Base URL: ${result.baseUrl}`,
-    `Full report: /Users/anna/IdeaProjects/private/legend/${DEFAULT_OUT_DIR}/latest-ai.md`,
+    `Full report: ${reportPath(result, 'latest-ai.md')}`,
     '',
     'Findings:',
   ];
@@ -531,7 +537,7 @@ function renderCodexPrompt(result) {
 
 function renderCodexFixPrompt(result) {
   const lines = [
-    'You are working in /Users/anna/IdeaProjects/private/legend.',
+    `You are working in ${result.workspaceCwd}.`,
     '',
     'Bagutka received explicit owner confirmation to fix the AI Zendesk agent findings.',
     'This is fix mode, not open-ended redesign.',
@@ -558,8 +564,8 @@ function renderCodexFixPrompt(result) {
     `Model: ${result.model}`,
     `Mode: ${result.mode}`,
     `Base URL: ${result.baseUrl}`,
-    `Full report: /Users/anna/IdeaProjects/private/legend/${DEFAULT_OUT_DIR}/latest-ai.md`,
-    `Raw JSON: /Users/anna/IdeaProjects/private/legend/${DEFAULT_OUT_DIR}/latest-ai.json`,
+    `Full report: ${reportPath(result, 'latest-ai.md')}`,
+    `Raw JSON: ${reportPath(result, 'latest-ai.json')}`,
     '',
     'Findings to fix:',
   ];
