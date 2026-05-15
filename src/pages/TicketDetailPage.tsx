@@ -160,7 +160,13 @@ export function TicketDetailPage() {
   }
 
   function applyMacro(macro: Macro) {
-    setReply((current) => `${current}${current ? '\n\n' : ''}${macro.body}`);
+    const targetComposer = activeTicket.source === 'review' ? 'review_reply' : 'public_reply';
+    if (targetComposer === 'review_reply') {
+      setReviewReply((current) => `${current}${current ? '\n\n' : ''}${macro.body}`);
+      setReviewReplyStarted(true);
+    } else {
+      setReply((current) => `${current}${current ? '\n\n' : ''}${macro.body}`);
+    }
     setAppliedMacro({
       macroId: macro.id,
       macroName: macro.name,
@@ -172,6 +178,7 @@ export function TicketDetailPage() {
       macroId: macro.id,
       macroName: macro.name,
       category: macro.category,
+      targetComposer,
       ...(macro.suggestedStatus ? { suggestedStatus: macro.suggestedStatus } : {}),
       ...(macro.suggestedTags?.length ? { suggestedTags: macro.suggestedTags } : {}),
       ...(macro.suggestedProjectIds?.length ? { suggestedProjectIds: macro.suggestedProjectIds } : {}),
@@ -260,11 +267,20 @@ export function TicketDetailPage() {
   }
 
   function applyKnownIssueReply(issue: KnownIssue) {
-    setReply((current) => `${current}${current ? '\n\n' : ''}${issue.suggestedReply}`);
-    setKnownIssueMessage('Known issue reply applied');
+    const targetComposer = activeTicket.source === 'review' ? 'review_reply' : 'public_reply';
+    if (targetComposer === 'review_reply') {
+      setReviewReply((current) => `${current}${current ? '\n\n' : ''}${issue.suggestedReply}`);
+      setReviewReplyStarted(true);
+    } else {
+      setReply((current) => `${current}${current ? '\n\n' : ''}${issue.suggestedReply}`);
+    }
+    setKnownIssueMessage(
+      targetComposer === 'review_reply' ? 'Known issue reply added to review reply' : 'Known issue reply applied',
+    );
     track('known_issue_reply_applied', {
       ticketId: activeTicket.id,
       knownIssueId: issue.id,
+      targetComposer,
     });
   }
 
@@ -439,8 +455,19 @@ export function TicketDetailPage() {
                     ...(ticket.reviewSource ? { reviewSource: ticket.reviewSource } : {}),
                     textLength: text.length,
                   });
+                  if (appliedMacro) {
+                    track('macro_reply_submitted', {
+                      ticketId: activeTicket.id,
+                      macroId: appliedMacro.macroId,
+                      macroName: appliedMacro.macroName,
+                      targetComposer: 'review_reply',
+                      wasEdited: text !== appliedMacro.body,
+                      changedLengthPercent: changedLengthPercent(appliedMacro.body, text),
+                    });
+                  }
                   setReviewReply('');
                   setReviewReplySent(true);
+                  setAppliedMacro(undefined);
                 }}
               >
                 Send review reply
@@ -731,7 +758,8 @@ function MacroPicker({
 
   function insertTemplate(macro: Macro) {
     onApply(macro);
-    setTemplateMessage(`Inserted reply template: ${macro.name}`);
+    const target = ticket.source === 'review' ? `${reviewSourceLabel(ticket.reviewSource)} review reply` : 'public reply';
+    setTemplateMessage(`Inserted ${macro.name} into ${target}`);
   }
 
   function applyMetadata(macro: Macro) {
@@ -744,7 +772,7 @@ function MacroPicker({
       <div className="section-title-row">
         <div>
           <strong>Reply templates</strong>
-          <span>Insert a reusable reply, then edit it before sending.</span>
+          <span>{ticket.source === 'review' ? 'Templates fill the review reply composer.' : 'Insert a reusable reply, then edit it before sending.'}</span>
         </div>
         <FeedbackButton
           context="macro_picker"
@@ -1053,26 +1081,73 @@ function matchingKnownIssues(ticket: Ticket) {
 }
 
 function knownIssueMatchesTicket(issue: KnownIssue, ticket: Ticket) {
+  const match = knownIssueMatchDetail(issue, ticket);
+  return match.sourceMatches && match.platformMatches && match.symptomMatches;
+}
+
+function knownIssueMatchDetail(issue: KnownIssue, ticket: Ticket) {
   const ticketSource = ticket.source === 'support' ? 'support' : ticket.reviewSource;
   const topicMatches = issue.topicIds.includes(ticket.topicId);
   const projectMatches = ticket.projectIds.some((projectId) => issue.projectIds.includes(projectId));
   const sourceMatches = !issue.affectedSources?.length || Boolean(ticketSource && issue.affectedSources.includes(ticketSource));
   const platformMatches =
     !issue.affectedPlatforms?.length || Boolean(ticket.platform && issue.affectedPlatforms.includes(ticket.platform));
+  const symptomMatches = topicMatches || sharedKnownIssueSymptomCount(issue, ticket) >= 2;
 
-  return (topicMatches || projectMatches) && sourceMatches && platformMatches;
+  return {
+    topicMatches,
+    projectMatches,
+    sourceMatches,
+    platformMatches,
+    symptomMatches,
+    sharedSymptomCount: sharedKnownIssueSymptomCount(issue, ticket),
+  };
 }
 
 function scoreKnownIssue(issue: KnownIssue, ticket: Ticket) {
   const ticketSource = ticket.source === 'support' ? 'support' : ticket.reviewSource;
+  const match = knownIssueMatchDetail(issue, ticket);
   let score = 0;
 
-  if (issue.topicIds.includes(ticket.topicId)) score += 4;
+  if (match.topicMatches) score += 6;
+  score += match.sharedSymptomCount;
   score += ticket.projectIds.filter((projectId) => issue.projectIds.includes(projectId)).length;
   if (ticketSource && issue.affectedSources?.includes(ticketSource)) score += 2;
   if (ticket.platform && issue.affectedPlatforms?.includes(ticket.platform)) score += 2;
 
   return score;
+}
+
+function sharedKnownIssueSymptomCount(issue: KnownIssue, ticket: Ticket) {
+  const ticketTokens = meaningfulTokens(`${ticket.subject} ${ticket.description} ${ticket.tags.join(' ')}`);
+  const issueTokens = meaningfulTokens(
+    `${issue.title} ${issue.description} ${issue.suggestedReply} ${issue.topicIds.map(topicName).join(' ')}`,
+  );
+
+  return [...ticketTokens].filter((token) => issueTokens.has(token)).length;
+}
+
+function meaningfulTokens(text: string) {
+  const stopWords = new Set([
+    'after',
+    'again',
+    'some',
+    'status',
+    'still',
+    'that',
+    'this',
+    'when',
+    'while',
+    'with',
+    'your',
+  ]);
+
+  return new Set(
+    text
+      .toLowerCase()
+      .split(/[^a-z0-9]+/)
+      .filter((token) => token.length >= 4 && !stopWords.has(token)),
+  );
 }
 
 function affectedLabel(issue: KnownIssue) {

@@ -303,7 +303,7 @@ Bagutka relays the fix turn progress through explicit milestones:
 
 Macros are reusable reply templates for common support situations such as eSIM setup, refunds, payment failures, missing documents, notifications, login reset, known issue acknowledgement, and ticket closure.
 
-Agents can search macros, insert a macro into the public reply draft, edit the text before sending, and optionally apply suggested metadata such as tags, status, or project ownership.
+Agents can search macros, insert a macro into the relevant reply draft, edit the text before sending, and optionally apply suggested metadata such as tags, status, or project ownership. On App Store or Google Play review tickets, macro insertion fills the review reply composer so the review-specific send action becomes available.
 
 Macro instrumentation helps answer:
 
@@ -344,9 +344,9 @@ Future versions may replace this deterministic logic with embeddings or similari
 
 ### Known Issues
 
-Known issues connect repeated tickets and reviews to active product or operational problems. A matching known issue appears on the ticket detail side panel when the ticket topic, project, platform, or source matches a predefined issue.
+Known issues connect repeated tickets and reviews to active product or operational problems. A matching known issue appears on the ticket detail side panel only when source/platform constraints match and the reported symptom aligns with the known issue topic or issue text. A broad shared project such as Payments is not enough to surface an actionable known issue reply.
 
-Agents can link a ticket to a known issue, apply a suggested known-issue reply into the public reply draft, and open a compact details modal with affected projects, topics, linked tickets, and representative items.
+Agents can link a ticket to a known issue, apply a suggested known-issue reply into the relevant reply draft, and open a compact details modal with affected projects, topics, linked tickets, and representative items. On App Store or Google Play review tickets, known-issue replies fill the review reply composer rather than the generic public reply composer.
 
 Key events:
 
