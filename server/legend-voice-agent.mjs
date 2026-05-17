@@ -20,17 +20,54 @@ class LegendDeskVoiceAgent extends voice.Agent {
 export default defineAgent({
   entry: async (ctx) => {
     const sessionContext = parseMetadata(ctx.job?.metadata);
+    console.log('[legend-voice-agent] job received', {
+      room: ctx.room.name,
+      ticketId: sessionContext.ticketId,
+      voiceSessionId: sessionContext.voiceSessionId,
+    });
+
+    await ctx.connect();
+    const participant = await ctx.waitForParticipant();
+    console.log('[legend-voice-agent] participant linked', {
+      identity: participant.identity,
+      kind: participant.info?.kind,
+    });
+
     const session = new voice.AgentSession({
       llm: new openai.realtime.RealtimeModel({
         voice: realtimeVoice,
       }),
     });
 
+    session.on(voice.AgentSessionEventTypes.AgentStateChanged, (event) => {
+      console.log('[legend-voice-agent] agent state changed', {
+        oldState: event.oldState,
+        newState: event.newState,
+      });
+    });
+    session.on(voice.AgentSessionEventTypes.UserInputTranscribed, (event) => {
+      console.log('[legend-voice-agent] user transcribed', {
+        isFinal: event.isFinal,
+        transcriptLength: event.transcript.length,
+      });
+    });
+    session.on(voice.AgentSessionEventTypes.Error, (event) => {
+      console.error('[legend-voice-agent] session error', event.error);
+    });
+    session.on(voice.AgentSessionEventTypes.Close, (event) => {
+      console.log('[legend-voice-agent] session closed', {
+        reason: event.reason,
+        error: event.error,
+      });
+    });
+
     await session.start({
       agent: new LegendDeskVoiceAgent(sessionContext),
       room: ctx.room,
+      inputOptions: {
+        participantIdentity: participant.identity,
+      },
     });
-    await ctx.connect();
     await session.generateReply({
       instructions:
         'Start with one concise contextual sentence. Mention the screen or recent error if present, then ask the user to confirm the problem.',
