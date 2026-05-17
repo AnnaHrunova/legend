@@ -273,6 +273,80 @@ The page can also join an already-created room when opened with:
 
 That path is useful from the `Open customer test` button inside a voice ticket.
 
+### How To Test The Mobile Voice Page
+
+Use this page when you want to test the flow as if the user started support from the real iOS/Android app.
+
+1. Open:
+
+```text
+https://app.legenddesk.com/mobile-voice-test
+```
+
+2. Click:
+
+```text
+Start voice support
+```
+
+3. Allow microphone access in the browser.
+
+4. The page should show:
+
+- connection status
+- LiveKit room name
+- created ticket id
+- participant count
+- live captions when transcription is published
+
+5. Open Legend Desk in another tab:
+
+```text
+https://app.legenddesk.com/views/my-tickets
+```
+
+6. Wait up to 5 seconds. The frontend polls:
+
+```text
+GET /api/mobile-voice-sessions/tickets
+```
+
+The new mobile-created voice ticket should appear in the inbox.
+
+7. Open the ticket and use the voice panel:
+
+- `Join call`: support joins the same LiveKit room as the customer and AI agent
+- `Open customer test`: opens the same room as the mobile customer
+- `AI resolved`: closes the session as AI-handled
+- `Human resolved`: closes the session after support joined or handled the issue
+- `Abandoned`: closes the session as abandoned
+
+8. After testing, always end the session with one of the ending actions. This deletes the LiveKit room through:
+
+```text
+POST /api/voice-sessions/end
+```
+
+This matters because an active LiveKit room can keep the AI voice agent and OpenAI Realtime session alive. Да, это именно тот случай, где забытая тестовая вкладка может тихо жрать деньги, потому что, конечно, голосовой AI не питается святым духом.
+
+If the LiveKit dashboard still shows an active session, copy the room name from the ticket and close it manually:
+
+```bash
+curl -X POST https://app.legenddesk.com/api/voice-sessions/end \
+  -H 'Content-Type: application/json' \
+  -d '{"roomName":"legend-voice_..."}'
+```
+
+Expected result:
+
+```json
+{
+  "ended": true
+}
+```
+
+If the response includes `alreadyEnded: true`, the room was already gone in LiveKit and the API treated the close as successful.
+
 ### Human Handoff
 
 Human handoff means support joins the same LiveKit room where the customer and AI agent already are.
