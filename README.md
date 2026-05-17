@@ -185,6 +185,78 @@ Runtime services on Hetzner:
 
 LiveKit Cloud hosts the realtime voice room. The current AI agent worker is still deployed on Hetzner and registers with LiveKit from there. A cleaner future production setup may move the agent worker into LiveKit Agents Cloud.
 
+### Where The Voice Agent Is Deployed
+
+The current voice agent is:
+
+```text
+server/legend-voice-agent.mjs
+```
+
+It runs in the Hetzner Docker Compose service:
+
+```text
+legend-voice-agent
+```
+
+This service starts a LiveKit Agents worker. The worker connects to the LiveKit Cloud project using:
+
+```text
+LIVEKIT_URL
+LIVEKIT_API_KEY
+LIVEKIT_API_SECRET
+LIVEKIT_AGENT_NAME
+OPENAI_API_KEY
+OPENAI_REALTIME_VOICE
+```
+
+When `legend-voice-api` creates a room, it dispatches this registered worker into that room. The agent then joins the LiveKit room as an AI participant and uses OpenAI Realtime to understand and answer the customer by voice.
+
+So the split is:
+
+```text
+LiveKit Cloud
+  owns the room, WebRTC media, participants, and session lifecycle
+
+Hetzner legend-voice-agent
+  runs our custom agent code and connects to LiveKit as a worker
+
+OpenAI Realtime
+  performs speech understanding and spoken AI responses
+```
+
+The agent is not deployed inside LiveKit Agents Cloud yet. That was a deliberate MVP choice.
+
+Why it is on Hetzner right now:
+
+- fastest path after the frontend and voice API were already deployed there
+- one Docker Compose deploy controls frontend, voice API, Postgres, and agent together
+- easier to inspect logs through the same Hetzner deployment
+- no separate LiveKit agent project layout or CLI deploy was required to prove the product flow
+- enough for validating mobile start, AI voice response, support join, lifecycle close, and OpenAI usage stop
+
+Why LiveKit Agents Cloud may be better later:
+
+- the voice worker runs in LiveKit's managed agent runtime
+- less operational work on our server
+- fewer native WebRTC/runtime dependency issues in our Docker image
+- cleaner separation: Hetzner owns LegendDesk/product API, LiveKit owns realtime agent execution
+- likely better scaling and lifecycle management for production voice workloads
+
+The practical difference:
+
+```text
+Current MVP:
+Hetzner runs agent code -> agent connects to LiveKit Cloud room
+
+Future cleaner setup:
+LiveKit Agents Cloud runs agent code -> Hetzner only creates rooms/tokens/tickets
+```
+
+Both approaches use LiveKit rooms. The difference is where the custom AI worker process lives. Today it lives on our Hetzner server. In LiveKit Agents Cloud it would live in LiveKit's hosted agent runtime.
+
+We should move the agent to LiveKit Agents Cloud after the handoff/product lifecycle is proven, not before. Otherwise we would be mixing product validation with runtime migration work, which is a lovely way to create two problems and debug neither properly.
+
 Relevant files:
 
 ```text
