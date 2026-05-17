@@ -120,8 +120,7 @@ app.post('/api/voice-sessions/end', async (request, response) => {
   }
 
   try {
-    const roomService = new RoomServiceClient(livekitUrl, livekitApiKey, livekitApiSecret);
-    await roomService.deleteRoom(roomName);
+    await deleteLiveKitRoom(roomName);
     response.json({ roomName, mode: 'livekit', ended: true });
   } catch (error) {
     const message = errorMessage(error);
@@ -165,6 +164,35 @@ async function createParticipantToken({ identity, name, roomName, metadata }) {
     canPublishData: true,
   });
   return token.toJwt();
+}
+
+async function deleteLiveKitRoom(roomName) {
+  const token = new AccessToken(livekitApiKey, livekitApiSecret, { ttl: '2m' });
+  token.addGrant({
+    room: roomName,
+    roomAdmin: true,
+    roomCreate: true,
+    roomList: true,
+  });
+
+  const response = await fetch(`${livekitHttpUrl()}/twirp/livekit.RoomService/DeleteRoom`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${await token.toJwt()}`,
+      'Content-Type': 'application/json;charset=UTF-8',
+    },
+    body: JSON.stringify({ room: roomName }),
+    signal: AbortSignal.timeout(8000),
+  });
+
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(message || `LiveKit deleteRoom failed with ${response.status}`);
+  }
+}
+
+function livekitHttpUrl() {
+  return livekitUrl.replace(/^wss:/, 'https:').replace(/^ws:/, 'http:').replace(/\/$/, '');
 }
 
 function errorMessage(error) {
