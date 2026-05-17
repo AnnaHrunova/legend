@@ -124,7 +124,8 @@ app.post('/api/voice-sessions/end', async (request, response) => {
     response.json({ roomName, mode: 'livekit', ended: true });
   } catch (error) {
     const message = errorMessage(error);
-    if (message.toLowerCase().includes('not found')) {
+    const normalizedMessage = message.toLowerCase();
+    if (normalizedMessage.includes('not found') || normalizedMessage.includes('not_found')) {
       response.json({ roomName, mode: 'livekit', ended: true, alreadyEnded: true });
       return;
     }
