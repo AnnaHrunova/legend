@@ -6,6 +6,7 @@ import { AdminPage } from './pages/AdminPage';
 import { CreateTicketPage } from './pages/CreateTicketPage';
 import { CustomersPage } from './pages/CustomersPage';
 import { InboxPage } from './pages/InboxPage';
+import { MobileVoiceTestPage } from './pages/MobileVoiceTestPage';
 import { ReportsPage } from './pages/ReportsPage';
 import { TicketDetailPage } from './pages/TicketDetailPage';
 import { PlatformHealthPage } from './pages/PlatformHealthPage';
@@ -32,6 +33,7 @@ export default function App() {
         <Route path="all-tickets" element={<Navigate to="/views/recently-updated" replace />} />
         <Route path="tickets/new" element={<CreateTicketPage />} />
         <Route path="tickets/:ticketId" element={<TicketDetailPage />} />
+        <Route path="mobile-voice-test" element={<MobileVoiceTestPage />} />
         <Route path="customers" element={<CustomersPage />} />
         <Route path="reports" element={<ReportsPage />} />
         <Route path="analytics/topics" element={<TopicsAnalyticsPage />} />

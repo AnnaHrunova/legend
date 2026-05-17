@@ -27,6 +27,7 @@ interface TicketStore {
   tickets: Ticket[];
   getTicket: (id: string) => Ticket | undefined;
   updateTicket: (id: string, patch: Partial<Ticket>, activity: string, actorName?: string) => void;
+  updateTicketSilently: (id: string, patch: Partial<Ticket>) => void;
   assignToCurrentUser: (ids: string[]) => void;
   bulkUpdateStatus: (ids: string[], status: TicketStatus) => void;
   bulkUpdatePriority: (ids: string[], priority: Priority) => void;
@@ -68,7 +69,20 @@ function normalizeTickets(tickets: Ticket[]): Ticket[] {
       relatedTicketIds: ticket.relatedTicketIds ?? [],
       mergedTicketIds: ticket.mergedTicketIds ?? [],
       knownIssueIds: ticket.knownIssueIds ?? [],
-      ...(ticket.voiceSession ? { voiceSession: ticket.voiceSession } : {}),
+      ...(ticket.voiceSession
+        ? {
+            voiceSession: {
+              callStatus:
+                ticket.voiceSession.callStatus ??
+                (ticket.voiceSession.status === 'resolved' || ticket.voiceSession.status === 'abandoned'
+                  ? 'ended'
+                  : ticket.voiceSession.status === 'failed'
+                    ? 'failed'
+                    : 'connecting'),
+              ...ticket.voiceSession,
+            },
+          }
+        : {}),
     };
   });
 
@@ -111,6 +125,9 @@ export function TicketProvider({ children }: { children: ReactNode }) {
             ? {
                 ...ticket,
                 ...patch,
+                ...(patch.voiceSession && ticket.voiceSession
+                  ? { voiceSession: { ...ticket.voiceSession, ...patch.voiceSession } }
+                  : {}),
                 updatedAt: nowIso(),
                 activity: [activity(actorName, action), ...ticket.activity],
               }
@@ -120,6 +137,23 @@ export function TicketProvider({ children }: { children: ReactNode }) {
     },
     [],
   );
+
+  const updateTicketSilently = useCallback((id: string, patch: Partial<Ticket>) => {
+    setTickets((current) =>
+      current.map((ticket) =>
+        ticket.id === id
+          ? {
+              ...ticket,
+              ...patch,
+              ...(patch.voiceSession && ticket.voiceSession
+                ? { voiceSession: { ...ticket.voiceSession, ...patch.voiceSession } }
+                : {}),
+              updatedAt: nowIso(),
+            }
+          : ticket,
+      ),
+    );
+  }, []);
 
   const assignToCurrentUser = useCallback((ids: string[]) => {
     setTickets((current) =>
@@ -314,6 +348,7 @@ export function TicketProvider({ children }: { children: ReactNode }) {
       id: sessionId,
       roomName: `legend-${sessionId}`,
       status: 'connecting',
+      callStatus: 'connecting',
       startedAt: now,
       mode: 'mock',
       appContext,
@@ -381,6 +416,7 @@ export function TicketProvider({ children }: { children: ReactNode }) {
       addPublicReply,
       createTicket,
       createVoiceTicket,
+      updateTicketSilently,
     }),
     [
       addInternalNote,
@@ -393,6 +429,7 @@ export function TicketProvider({ children }: { children: ReactNode }) {
       createVoiceTicket,
       tickets,
       updateTicket,
+      updateTicketSilently,
     ],
   );
 

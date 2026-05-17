@@ -1,8 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ControlBar,
   LiveKitRoom,
   RoomAudioRenderer,
+  useConnectionState,
+  useParticipants,
   useTranscriptions,
 } from '@livekit/components-react';
 import '@livekit/components-styles';
@@ -28,6 +30,8 @@ import {
   type Team,
   type Ticket,
   type TicketStatus,
+  type VoiceCallStatus,
+  type VoiceTranscriptTurn,
 } from '../domain/types';
 import { useTickets } from '../state/ticketStore';
 import { endVoiceRoom } from '../voice/voiceSessionApi';
@@ -35,7 +39,15 @@ import { endVoiceRoom } from '../voice/voiceSessionApi';
 export function TicketDetailPage() {
   const { ticketId } = useParams();
   const navigate = useNavigate();
-  const { tickets, getTicket, updateTicket, assignToCurrentUser, addInternalNote, addPublicReply } = useTickets();
+  const {
+    tickets,
+    getTicket,
+    updateTicket,
+    updateTicketSilently,
+    assignToCurrentUser,
+    addInternalNote,
+    addPublicReply,
+  } = useTickets();
   const ticket = ticketId ? getTicket(ticketId) : undefined;
   const [reply, setReply] = useState('');
   const [appliedMacro, setAppliedMacro] = useState<AppliedMacroState | undefined>();
@@ -350,6 +362,8 @@ export function TicketDetailPage() {
         {
           ...voiceSession,
           status: 'human_active',
+          callStatus: 'connecting',
+          lastError: undefined,
           outcome: 'human_handoff',
         },
         'Support agent joined voice session',
@@ -365,15 +379,57 @@ export function TicketDetailPage() {
     }
   }
 
+  function updateVoiceCallState(
+    patch: Pick<NonNullable<Ticket['voiceSession']>, 'callStatus'> &
+      Partial<Pick<NonNullable<Ticket['voiceSession']>, 'lastError' | 'participantCount'>>,
+  ) {
+    const voiceSession = activeTicket.voiceSession;
+    if (!voiceSession) return;
+    updateTicketSilently(activeTicket.id, {
+      voiceSession: {
+        ...voiceSession,
+        ...patch,
+      },
+    });
+  }
+
+  function syncVoiceTranscript(turns: VoiceTranscriptTurn[]) {
+    const voiceSession = activeTicket.voiceSession;
+    if (!voiceSession || !turns.length) return;
+    const byId = new Map(voiceSession.transcript.map((turn) => [turn.id, turn]));
+    let changed = false;
+    turns.forEach((turn) => {
+      const current = byId.get(turn.id);
+      if (!current || current.text !== turn.text || current.isFinal !== turn.isFinal) {
+        byId.set(turn.id, turn);
+        changed = true;
+      }
+    });
+    if (!changed) return;
+    const transcript = Array.from(byId.values()).sort(
+      (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+    );
+    const latestUserTurn = [...transcript].reverse().find((turn) => turn.speaker === 'user');
+    updateTicketSilently(activeTicket.id, {
+      voiceSession: {
+        ...voiceSession,
+        transcript,
+        summary: latestUserTurn
+          ? `Live voice transcript captured. Latest customer input: ${latestUserTurn.text}`
+          : voiceSession.summary,
+      },
+    });
+  }
+
   async function endVoiceSession(outcome: NonNullable<NonNullable<Ticket['voiceSession']>['outcome']>) {
     const voiceSession = activeTicket.voiceSession;
     if (!voiceSession) return;
     const nextStatus = outcome === 'abandoned' ? 'abandoned' : 'resolved';
-    setVoiceRoomOpen(false);
     updateVoiceSession(
       {
         ...voiceSession,
         status: nextStatus,
+        callStatus: voiceSession.mode === 'livekit' ? 'ending' : 'ended',
         outcome,
         endedAt: new Date().toISOString(),
         summary:
@@ -383,6 +439,7 @@ export function TicketDetailPage() {
       outcome === 'abandoned' ? 'Marked voice session abandoned' : 'Resolved voice session',
       { status: outcome === 'abandoned' ? 'Pending' : 'Solved' },
     );
+    setVoiceRoomOpen(false);
     track('ticket_status_changed', {
       ticketId: activeTicket.id,
       channel: 'voice',
@@ -396,13 +453,25 @@ export function TicketDetailPage() {
     if (voiceSession.mode === 'livekit') {
       try {
         await endVoiceRoom(voiceSession.roomName);
+        updateTicketSilently(activeTicket.id, {
+          voiceSession: {
+            ...voiceSession,
+            status: nextStatus,
+            callStatus: 'ended',
+            outcome,
+            endedAt: new Date().toISOString(),
+            roomClosedAt: new Date().toISOString(),
+          },
+        });
       } catch (error) {
         updateVoiceSession(
           {
             ...voiceSession,
             status: nextStatus,
+            callStatus: 'failed',
             outcome,
             endedAt: new Date().toISOString(),
+            lastError: error instanceof Error ? error.message : String(error),
             setupWarnings: [
               ...(voiceSession.setupWarnings ?? []),
               error instanceof Error ? error.message : String(error),
@@ -513,6 +582,8 @@ export function TicketDetailPage() {
             ticket={ticket}
             voiceRoomOpen={voiceRoomOpen}
             onJoin={joinVoiceSession}
+            onCallStateChange={updateVoiceCallState}
+            onTranscriptChange={syncVoiceTranscript}
             onRequestHandoff={requestVoiceHandoff}
             onResolveByAi={() => endVoiceSession('ai_resolved')}
             onResolveByHuman={() => endVoiceSession('human_handoff')}
@@ -860,6 +931,8 @@ function VoiceSessionPanel({
   ticket,
   voiceRoomOpen,
   onJoin,
+  onCallStateChange,
+  onTranscriptChange,
   onRequestHandoff,
   onResolveByAi,
   onResolveByHuman,
@@ -868,6 +941,11 @@ function VoiceSessionPanel({
   ticket: Ticket;
   voiceRoomOpen: boolean;
   onJoin: () => void;
+  onCallStateChange: (
+    patch: Pick<NonNullable<Ticket['voiceSession']>, 'callStatus'> &
+      Partial<Pick<NonNullable<Ticket['voiceSession']>, 'lastError' | 'participantCount'>>,
+  ) => void;
+  onTranscriptChange: (turns: VoiceTranscriptTurn[]) => void;
   onRequestHandoff: () => void;
   onResolveByAi: () => void;
   onResolveByHuman: () => void;
@@ -876,6 +954,17 @@ function VoiceSessionPanel({
   const voiceSession = ticket.voiceSession!;
   const context = voiceSession.appContext;
   const canJoinLiveRoom = Boolean(voiceSession.livekitUrl && voiceSession.supportToken);
+  const customerTestUrl = useMemo(() => {
+    if (!voiceSession.livekitUrl || !voiceSession.customerToken) return undefined;
+    const params = new URLSearchParams({
+      serverUrl: voiceSession.livekitUrl,
+      token: voiceSession.customerToken,
+      roomName: voiceSession.roomName,
+      ticketId: ticket.id,
+      name: context.fullName,
+    });
+    return `/mobile-voice-test?${params.toString()}`;
+  }, [context.fullName, ticket.id, voiceSession.customerToken, voiceSession.livekitUrl, voiceSession.roomName]);
 
   return (
     <section className="voice-session-panel">
@@ -890,6 +979,15 @@ function VoiceSessionPanel({
           </span>
           <span>{voiceSession.mode === 'livekit' ? 'LiveKit room ready' : 'Mock mode'}</span>
         </div>
+      </div>
+
+      <div className={`voice-call-state voice-call-state-${voiceSession.callStatus ?? 'connecting'}`}>
+        <span className="voice-state-dot" aria-hidden="true" />
+        <strong>{voiceCallStatusLabel(voiceSession.callStatus ?? 'connecting')}</strong>
+        {voiceSession.participantCount !== undefined && (
+          <span>{voiceSession.participantCount} participant{voiceSession.participantCount === 1 ? '' : 's'}</span>
+        )}
+        {voiceSession.lastError && <em>{voiceSession.lastError}</em>}
       </div>
 
       <div className="voice-context-grid">
@@ -929,20 +1027,19 @@ function VoiceSessionPanel({
           <PhoneOff size={16} />
           Abandoned
         </button>
+        {customerTestUrl && (
+          <Link className="voice-mobile-test-link" to={customerTestUrl} target="_blank" rel="noreferrer">
+            Open customer test
+          </Link>
+        )}
       </div>
 
       {voiceRoomOpen && canJoinLiveRoom && (
-        <LiveKitRoom
-          audio
-          connect
-          serverUrl={voiceSession.livekitUrl}
-          token={voiceSession.supportToken}
-          className="voice-livekit-room"
-        >
-          <RoomAudioRenderer />
-          <LiveVoiceTranscriptFallback />
-          <ControlBar controls={{ camera: false, screenShare: false, chat: false }} />
-        </LiveKitRoom>
+        <VoiceLiveRoom
+          voiceSession={voiceSession}
+          onCallStateChange={onCallStateChange}
+          onTranscriptChange={onTranscriptChange}
+        />
       )}
 
       <div className="voice-transcript-list">
@@ -958,22 +1055,153 @@ function VoiceSessionPanel({
   );
 }
 
-function LiveVoiceTranscriptFallback() {
+function VoiceLiveRoom({
+  voiceSession,
+  onCallStateChange,
+  onTranscriptChange,
+}: {
+  voiceSession: NonNullable<Ticket['voiceSession']>;
+  onCallStateChange: (
+    patch: Pick<NonNullable<Ticket['voiceSession']>, 'callStatus'> &
+      Partial<Pick<NonNullable<Ticket['voiceSession']>, 'lastError' | 'participantCount'>>,
+  ) => void;
+  onTranscriptChange: (turns: VoiceTranscriptTurn[]) => void;
+}) {
+  return (
+    <LiveKitRoom
+      audio
+      connect
+      serverUrl={voiceSession.livekitUrl}
+      token={voiceSession.supportToken}
+      className="voice-livekit-room"
+      onError={(error) => {
+        onCallStateChange({
+          callStatus: 'failed',
+          lastError: error instanceof Error ? error.message : String(error),
+        });
+      }}
+      onMediaDeviceFailure={(failure, kind) => {
+        onCallStateChange({
+          callStatus: 'failed',
+          lastError: `Media device failed${kind ? ` (${kind})` : ''}: ${String(failure)}`,
+        });
+      }}
+    >
+      <RoomAudioRenderer />
+      <VoiceRoomTelemetry
+        currentCallStatus={voiceSession.callStatus ?? 'connecting'}
+        currentVoiceStatus={voiceSession.status}
+        onCallStateChange={onCallStateChange}
+        onTranscriptChange={onTranscriptChange}
+      />
+      <ControlBar controls={{ camera: false, screenShare: false, chat: false }} />
+    </LiveKitRoom>
+  );
+}
+
+function VoiceRoomTelemetry({
+  currentCallStatus,
+  currentVoiceStatus,
+  onCallStateChange,
+  onTranscriptChange,
+}: {
+  currentCallStatus: VoiceCallStatus;
+  currentVoiceStatus: NonNullable<Ticket['voiceSession']>['status'];
+  onCallStateChange: (
+    patch: Pick<NonNullable<Ticket['voiceSession']>, 'callStatus'> &
+      Partial<Pick<NonNullable<Ticket['voiceSession']>, 'lastError' | 'participantCount'>>,
+  ) => void;
+  onTranscriptChange: (turns: VoiceTranscriptTurn[]) => void;
+}) {
+  const connectionState = useConnectionState();
+  const participants = useParticipants();
   const transcriptions = useTranscriptions();
+  const lastCallSnapshotRef = useRef('');
+  const lastTranscriptSnapshotRef = useRef('');
+  const stateName = String(connectionState).toLowerCase();
+  const transcriptTurns = useMemo(
+    () =>
+      transcriptions
+        .filter((item) => item.text.trim())
+        .map((item) => ({
+          id: `livekit-${item.participantInfo.identity}-${item.streamInfo.id}`,
+          speaker: voiceSpeakerFromIdentity(item.participantInfo.identity),
+          text: item.text.trim(),
+          createdAt: new Date().toISOString(),
+          isFinal: true,
+        })),
+    [transcriptions],
+  );
+
+  useEffect(() => {
+    const terminal = currentVoiceStatus === 'resolved' || currentVoiceStatus === 'abandoned';
+    const nextCallStatus: VoiceCallStatus =
+      currentCallStatus === 'ending' || terminal
+        ? 'ending'
+        : stateName === 'connected'
+          ? 'live'
+          : stateName === 'disconnected' && currentCallStatus === 'live'
+            ? 'failed'
+            : 'connecting';
+    const snapshot = `${nextCallStatus}:${participants.length}:${stateName}`;
+    if (lastCallSnapshotRef.current === snapshot) return;
+    lastCallSnapshotRef.current = snapshot;
+    onCallStateChange({
+      callStatus: nextCallStatus,
+      participantCount: participants.length,
+      ...(nextCallStatus === 'failed'
+        ? { lastError: 'LiveKit room disconnected before resolution.' }
+        : { lastError: undefined }),
+    });
+  }, [currentCallStatus, currentVoiceStatus, onCallStateChange, participants.length, stateName]);
+
+  useEffect(() => {
+    if (!transcriptTurns.length) return;
+    const snapshot = JSON.stringify(
+      transcriptTurns.map((turn) => ({
+        id: turn.id,
+        speaker: turn.speaker,
+        text: turn.text,
+        isFinal: turn.isFinal,
+      })),
+    );
+    if (lastTranscriptSnapshotRef.current === snapshot) return;
+    lastTranscriptSnapshotRef.current = snapshot;
+    onTranscriptChange(transcriptTurns);
+  }, [onTranscriptChange, transcriptTurns]);
+
   if (!transcriptions.length) {
-    return <span className="voice-live-caption">Live transcription will appear when the agent publishes text.</span>;
+    return (
+      <div className="voice-live-state">
+        <span className="voice-live-caption">
+          Live transcription will appear when the agent publishes text.
+        </span>
+        <span>{voiceConnectionLabel(stateName)} · {participants.length} participant{participants.length === 1 ? '' : 's'}</span>
+      </div>
+    );
   }
 
   return (
-    <div className="voice-live-transcriptions">
-      {transcriptions.slice(-4).map((item) => (
-        <span key={`${item.participantInfo.identity}-${item.streamInfo.id}`}>
-          <strong>{item.participantInfo.identity}</strong>
-          {item.text}
-        </span>
-      ))}
+    <div className="voice-live-state">
+      <span>{voiceConnectionLabel(stateName)} · {participants.length} participant{participants.length === 1 ? '' : 's'}</span>
+      <div className="voice-live-transcriptions">
+        {transcriptions.slice(-4).map((item) => (
+          <span key={`${item.participantInfo.identity}-${item.streamInfo.id}`}>
+            <strong>{voiceSpeakerLabel(voiceSpeakerFromIdentity(item.participantInfo.identity))}</strong>
+            {item.text}
+          </span>
+        ))}
+      </div>
     </div>
   );
+}
+
+function voiceSpeakerFromIdentity(identity: string): VoiceTranscriptTurn['speaker'] {
+  const normalized = identity.toLowerCase();
+  if (normalized.includes('customer')) return 'user';
+  if (normalized.includes('agent') || normalized.includes('assistant')) return 'ai';
+  if (normalized.includes('support')) return 'agent';
+  return 'system';
 }
 
 function voiceStatusLabel(status: NonNullable<Ticket['voiceSession']>['status']) {
@@ -987,6 +1215,27 @@ function voiceStatusLabel(status: NonNullable<Ticket['voiceSession']>['status'])
     failed: 'Failed',
   };
   return labels[status];
+}
+
+function voiceCallStatusLabel(status: VoiceCallStatus) {
+  const labels: Record<VoiceCallStatus, string> = {
+    connecting: 'Connecting',
+    live: 'Live',
+    ending: 'Ending',
+    ended: 'Ended',
+    failed: 'Failed',
+  };
+  return labels[status];
+}
+
+function voiceConnectionLabel(stateName: string) {
+  const labels: Record<string, string> = {
+    connected: 'Connected',
+    connecting: 'Connecting',
+    disconnected: 'Disconnected',
+    reconnecting: 'Reconnecting',
+  };
+  return labels[stateName] ?? stateName;
 }
 
 function voiceSpeakerLabel(speaker: NonNullable<Ticket['voiceSession']>['transcript'][number]['speaker']) {

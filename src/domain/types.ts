@@ -119,6 +119,13 @@ export type VoiceSessionStatus =
   | 'abandoned'
   | 'failed';
 
+export type VoiceCallStatus =
+  | 'connecting'
+  | 'live'
+  | 'ending'
+  | 'ended'
+  | 'failed';
+
 export interface VoiceAppContext {
   userId: string;
   fullName: string;
@@ -144,8 +151,10 @@ export interface VoiceSession {
   id: string;
   roomName: string;
   status: VoiceSessionStatus;
+  callStatus?: VoiceCallStatus;
   startedAt: string;
   endedAt?: string;
+  roomClosedAt?: string;
   livekitUrl?: string;
   supportToken?: string;
   customerToken?: string;
@@ -158,6 +167,8 @@ export interface VoiceSession {
   outcome?: 'ai_resolved' | 'human_handoff' | 'abandoned' | 'failed';
   transcript: VoiceTranscriptTurn[];
   setupWarnings?: string[];
+  lastError?: string;
+  participantCount?: number;
 }
 
 export interface Ticket {

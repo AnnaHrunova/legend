@@ -77,6 +77,7 @@ export function AppLayout() {
           voiceSession: {
             ...voiceSession,
             status: 'ai_active',
+            callStatus: 'connecting',
             roomName: started.roomName,
             livekitUrl: started.livekitUrl,
             supportToken: started.supportToken,
@@ -104,7 +105,9 @@ export function AppLayout() {
           voiceSession: {
             ...voiceSession,
             status: 'failed',
+            callStatus: 'failed',
             outcome: 'failed',
+            lastError: error instanceof Error ? error.message : String(error),
             setupWarnings: [error instanceof Error ? error.message : String(error)],
           },
           status: 'Escalated',
