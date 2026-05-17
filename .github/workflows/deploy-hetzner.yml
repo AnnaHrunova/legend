@@ -11,6 +11,7 @@ on:
         options:
           - deploy_frontend
           - run_ai_zendesk_agent
+          - voice_debug
       agent_branch:
         description: 'Repo branch containing the AI Zendesk agent runner'
         required: false
@@ -413,3 +414,63 @@ jobs:
           name: latest-ai-report
           path: ${{ runner.temp }}/legend-ai-result
           retention-days: 14
+
+  voice-debug:
+    if: ${{ inputs.operation == 'voice_debug' }}
+    runs-on: ubuntu-latest
+    env:
+      HETZNER_USER: deploy
+      HETZNER_PORT: ${{ secrets.HETZNER_PORT || 22 }}
+    steps:
+      - name: Prepare SSH key
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "${HETZNER_SSH_KEY}" > ~/.ssh/hetzner_deploy
+          chmod 600 ~/.ssh/hetzner_deploy
+          ssh-keygen -lf ~/.ssh/hetzner_deploy
+        env:
+          HETZNER_SSH_KEY: ${{ secrets.HETZNER_SSH_KEY }}
+
+      - name: Collect voice diagnostics
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/hetzner_deploy \
+            -p "${HETZNER_PORT}" \
+            -o BatchMode=yes \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=accept-new \
+            "${HETZNER_USER}@${HETZNER_HOST}" \
+            'bash -s' <<'REMOTE_SCRIPT'
+          set -euo pipefail
+          cd /opt/legend
+
+          echo "== docker compose ps =="
+          docker compose -f docker-compose.hetzner.yml ps
+
+          echo
+          echo "== voice env presence =="
+          docker compose -f docker-compose.hetzner.yml exec -T legend-voice-agent sh -lc '
+            test -n "$LIVEKIT_URL" && echo "LIVEKIT_URL=set" || echo "LIVEKIT_URL=missing"
+            test -n "$LIVEKIT_API_KEY" && echo "LIVEKIT_API_KEY=set" || echo "LIVEKIT_API_KEY=missing"
+            test -n "$LIVEKIT_API_SECRET" && echo "LIVEKIT_API_SECRET=set" || echo "LIVEKIT_API_SECRET=missing"
+            test -n "$OPENAI_API_KEY" && echo "OPENAI_API_KEY=set" || echo "OPENAI_API_KEY=missing"
+            printf "LIVEKIT_AGENT_NAME=%s\n" "${LIVEKIT_AGENT_NAME:-}"
+            printf "OPENAI_REALTIME_VOICE=%s\n" "${OPENAI_REALTIME_VOICE:-}"
+          '
+
+          echo
+          echo "== voice-api health =="
+          docker compose -f docker-compose.hetzner.yml exec -T legend-voice-api sh -lc \
+            'node -e "fetch(\"http://127.0.0.1:8787/healthz\").then(r=>r.text()).then(console.log)"'
+
+          echo
+          echo "== legend-voice-api logs =="
+          docker logs legend-voice-api --tail 120
+
+          echo
+          echo "== legend-voice-agent logs =="
+          docker logs legend-voice-agent --tail 220
+          REMOTE_SCRIPT
+        env:
+          HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
