@@ -58,7 +58,7 @@ app.post('/api/voice-sessions', async (request, response) => {
     const roomService = new RoomServiceClient(livekitUrl, livekitApiKey, livekitApiSecret);
     await roomService.createRoom({
       name: roomName,
-      emptyTimeout: 10 * 60,
+      emptyTimeout: 60,
       maxParticipants: 4,
       metadata: JSON.stringify({ ticketId, voiceSessionId, appContext }),
     });
