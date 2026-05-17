@@ -16,16 +16,30 @@ services:
     depends_on:
       - legend-voice-api
 
+  legend-postgres:
+    image: postgres:16-alpine
+    container_name: legend-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: legend_voice
+      POSTGRES_USER: legend_voice
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-legend_voice_dev_password}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
   legend-voice-api:
     image: ghcr.io/annahrunova/legend-voice-api:latest
     container_name: legend-voice-api
     restart: unless-stopped
     environment:
       VOICE_API_PORT: 8787
+      DATABASE_URL: postgres://legend_voice:${POSTGRES_PASSWORD:-legend_voice_dev_password}@legend-postgres:5432/legend_voice
       LIVEKIT_URL: ${LIVEKIT_URL}
       LIVEKIT_API_KEY: ${LIVEKIT_API_KEY}
       LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET}
       LIVEKIT_AGENT_NAME: ${LIVEKIT_AGENT_NAME:-legend-voice-agent}
+    depends_on:
+      - legend-postgres
 
   legend-voice-agent:
     image: ghcr.io/annahrunova/legend-voice-agent:latest
@@ -42,3 +56,4 @@ services:
 volumes:
   caddy_data:
   caddy_config:
+  postgres_data:

@@ -22,7 +22,7 @@ import { currentUser } from '../data/mockUsers';
 import { applyTicketView } from '../domain/ticketViews';
 import { useTickets } from '../state/ticketStore';
 import { useTicketViews } from '../state/viewStore';
-import { startVoiceSession } from '../voice/voiceSessionApi';
+import { listMobileVoiceTickets, startVoiceSession } from '../voice/voiceSessionApi';
 
 const navItems = [
   { label: 'Inbox', to: '/views/my-tickets', icon: Inbox },
@@ -34,7 +34,7 @@ const navItems = [
 
 export function AppLayout() {
   const navigate = useNavigate();
-  const { tickets, createVoiceTicket, updateTicket } = useTickets();
+  const { tickets, createVoiceTicket, updateTicket, upsertTicketsSilently } = useTickets();
   const { systemViews, customViews } = useTicketViews();
   const [voiceStarting, setVoiceStarting] = useState(false);
 
@@ -42,6 +42,28 @@ export function AppLayout() {
     const view = [...systemViews, ...customViews].find((item) => item.id === viewId);
     return view ? applyTicketView(tickets, view, currentUser.id).length : 0;
   }
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function syncMobileVoiceTickets() {
+      try {
+        const mobileVoiceTickets = await listMobileVoiceTickets();
+        if (!cancelled) {
+          upsertTicketsSilently(mobileVoiceTickets);
+        }
+      } catch {
+        // The voice API is optional for local prototype runs.
+      }
+    }
+
+    void syncMobileVoiceTickets();
+    const timer = window.setInterval(syncMobileVoiceTickets, 5000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [upsertTicketsSilently]);
 
   async function startDemoVoiceTicket() {
     if (voiceStarting) return;

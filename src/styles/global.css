@@ -3176,6 +3176,38 @@ textarea:focus {
   font-weight: 800;
 }
 
+.mobile-voice-start {
+  display: grid;
+  gap: 14px;
+}
+
+.mobile-voice-start dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+}
+
+.mobile-voice-start dt {
+  color: #66758a;
+  font-size: 11px;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.mobile-voice-start dd {
+  margin: 3px 0 0;
+  color: #172033;
+  font-size: 13px;
+  font-weight: 850;
+  overflow-wrap: anywhere;
+}
+
+.mobile-voice-start .primary-button {
+  width: 100%;
+  min-height: 42px;
+}
+
 .mobile-voice-room {
   display: grid;
   gap: 12px;

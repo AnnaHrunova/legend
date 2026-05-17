@@ -197,6 +197,9 @@ jobs:
 
           upsert_env HETZNER_DOMAIN "$HETZNER_DOMAIN"
           upsert_env CADDY_EMAIL "$CADDY_EMAIL"
+          if ! grep -q "^POSTGRES_PASSWORD=" .env; then
+            upsert_env POSTGRES_PASSWORD "$(openssl rand -hex 24)"
+          fi
 
           require_env_name LIVEKIT_URL
           require_env_name LIVEKIT_API_KEY

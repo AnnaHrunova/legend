@@ -28,6 +28,7 @@ interface TicketStore {
   getTicket: (id: string) => Ticket | undefined;
   updateTicket: (id: string, patch: Partial<Ticket>, activity: string, actorName?: string) => void;
   updateTicketSilently: (id: string, patch: Partial<Ticket>) => void;
+  upsertTicketsSilently: (incomingTickets: Ticket[]) => void;
   assignToCurrentUser: (ids: string[]) => void;
   bulkUpdateStatus: (ids: string[], status: TicketStatus) => void;
   bulkUpdatePriority: (ids: string[], priority: Priority) => void;
@@ -153,6 +154,15 @@ export function TicketProvider({ children }: { children: ReactNode }) {
           : ticket,
       ),
     );
+  }, []);
+
+  const upsertTicketsSilently = useCallback((incomingTickets: Ticket[]) => {
+    if (!incomingTickets.length) return;
+    setTickets((current) => {
+      const existingIds = new Set(current.map((ticket) => ticket.id));
+      const newTickets = incomingTickets.filter((ticket) => !existingIds.has(ticket.id));
+      return newTickets.length ? normalizeTickets([...newTickets, ...current]) : current;
+    });
   }, []);
 
   const assignToCurrentUser = useCallback((ids: string[]) => {
@@ -417,6 +427,7 @@ export function TicketProvider({ children }: { children: ReactNode }) {
       createTicket,
       createVoiceTicket,
       updateTicketSilently,
+      upsertTicketsSilently,
     }),
     [
       addInternalNote,
@@ -430,6 +441,7 @@ export function TicketProvider({ children }: { children: ReactNode }) {
       tickets,
       updateTicket,
       updateTicketSilently,
+      upsertTicketsSilently,
     ],
   );
 

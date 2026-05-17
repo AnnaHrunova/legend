@@ -23,6 +23,7 @@
     "livekit-client": "^2.19.0",
     "livekit-server-sdk": "^2.15.3",
     "lucide-react": "^0.468.0",
+    "pg": "^8.20.0",
     "posthog-js": "^1.372.5",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
