@@ -4,6 +4,9 @@
 
 {$HETZNER_DOMAIN} {
 	encode zstd gzip
+	basic_auth {
+		{$CADDY_BASIC_AUTH_USER} {$CADDY_BASIC_AUTH_HASH}
+	}
 
 	handle /api/* {
 		reverse_proxy {$VOICE_API_UPSTREAM:legend-voice-api:8787}
