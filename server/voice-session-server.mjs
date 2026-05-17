@@ -103,6 +103,37 @@ app.post('/api/voice-sessions', async (request, response) => {
   }
 });
 
+app.post('/api/voice-sessions/end', async (request, response) => {
+  const payload = request.body ?? {};
+  const requestedRoomName = stringOrUndefined(payload.roomName);
+
+  if (!requestedRoomName) {
+    response.status(400).send('roomName is required');
+    return;
+  }
+
+  const roomName = safeRoomName(requestedRoomName);
+
+  if (!hasLiveKitConfig()) {
+    response.json({ roomName, mode: 'mock', ended: true });
+    return;
+  }
+
+  try {
+    const roomService = new RoomServiceClient(livekitUrl, livekitApiKey, livekitApiSecret);
+    await roomService.deleteRoom(roomName);
+    response.json({ roomName, mode: 'livekit', ended: true });
+  } catch (error) {
+    const message = errorMessage(error);
+    if (message.toLowerCase().includes('not found')) {
+      response.json({ roomName, mode: 'livekit', ended: true, alreadyEnded: true });
+      return;
+    }
+
+    response.status(502).send(`Unable to end LiveKit voice session: ${message}`);
+  }
+});
+
 app.listen(port, () => {
   console.log(`[voice-api] listening on :${port}`);
 });

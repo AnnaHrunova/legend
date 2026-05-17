@@ -39,3 +39,18 @@ export async function startVoiceSession(
 
   return response.json() as Promise<StartVoiceSessionResponse>;
 }
+
+export async function endVoiceRoom(roomName: string): Promise<void> {
+  const response = await fetch(`${apiBaseUrl}/voice-sessions/end`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ roomName }),
+  });
+
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(message || `Voice session end API failed with ${response.status}`);
+  }
+}

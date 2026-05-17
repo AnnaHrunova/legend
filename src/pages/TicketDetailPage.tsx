@@ -30,6 +30,7 @@ import {
   type TicketStatus,
 } from '../domain/types';
 import { useTickets } from '../state/ticketStore';
+import { endVoiceRoom } from '../voice/voiceSessionApi';
 
 export function TicketDetailPage() {
   const { ticketId } = useParams();
@@ -364,10 +365,11 @@ export function TicketDetailPage() {
     }
   }
 
-  function endVoiceSession(outcome: NonNullable<NonNullable<Ticket['voiceSession']>['outcome']>) {
+  async function endVoiceSession(outcome: NonNullable<NonNullable<Ticket['voiceSession']>['outcome']>) {
     const voiceSession = activeTicket.voiceSession;
     if (!voiceSession) return;
     const nextStatus = outcome === 'abandoned' ? 'abandoned' : 'resolved';
+    setVoiceRoomOpen(false);
     updateVoiceSession(
       {
         ...voiceSession,
@@ -388,8 +390,29 @@ export function TicketDetailPage() {
       fromStatus: voiceSession.status,
       toStatus: nextStatus,
       resolvedBy: outcome === 'ai_resolved' ? 'ai' : 'human',
+      roomName: voiceSession.roomName,
     });
-    setVoiceRoomOpen(false);
+
+    if (voiceSession.mode === 'livekit') {
+      try {
+        await endVoiceRoom(voiceSession.roomName);
+      } catch (error) {
+        updateVoiceSession(
+          {
+            ...voiceSession,
+            status: nextStatus,
+            outcome,
+            endedAt: new Date().toISOString(),
+            setupWarnings: [
+              ...(voiceSession.setupWarnings ?? []),
+              error instanceof Error ? error.message : String(error),
+            ],
+          },
+          'Voice room failed to close',
+          { status: outcome === 'abandoned' ? 'Pending' : 'Solved' },
+        );
+      }
+    }
   }
 
   return (
