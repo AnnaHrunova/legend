@@ -11,7 +11,15 @@ import { mockTickets } from '../data/mockTickets';
 import { agents, currentUser } from '../data/mockUsers';
 import { customers } from '../data/mockCustomers';
 import { topics } from '../analytics/topics/domain';
-import type { Priority, Ticket, TicketDraft, TicketStatus } from '../domain/types';
+import { initialVoiceTranscript } from '../data/mockVoiceSupport';
+import type {
+  Priority,
+  Ticket,
+  TicketDraft,
+  TicketStatus,
+  VoiceAppContext,
+  VoiceSession,
+} from '../domain/types';
 
 const STORAGE_KEY = 'legend.support.tickets.v1';
 
@@ -26,6 +34,7 @@ interface TicketStore {
   addInternalNote: (id: string, body: string) => void;
   addPublicReply: (id: string, body: string) => void;
   createTicket: (draft: TicketDraft) => Ticket;
+  createVoiceTicket: (appContext: VoiceAppContext) => Ticket;
 }
 
 const TicketContext = createContext<TicketStore | null>(null);
@@ -59,6 +68,7 @@ function normalizeTickets(tickets: Ticket[]): Ticket[] {
       relatedTicketIds: ticket.relatedTicketIds ?? [],
       mergedTicketIds: ticket.mergedTicketIds ?? [],
       knownIssueIds: ticket.knownIssueIds ?? [],
+      ...(ticket.voiceSession ? { voiceSession: ticket.voiceSession } : {}),
     };
   });
 
@@ -288,6 +298,76 @@ export function TicketProvider({ children }: { children: ReactNode }) {
     return newTicket;
   }, [tickets]);
 
+  const createVoiceTicket = useCallback((appContext: VoiceAppContext) => {
+    const customer =
+      customers.find((item) => item.email === appContext.email) ??
+      customers.find((item) => item.name === appContext.fullName) ??
+      customers[0];
+    const numericIds = tickets
+      .map((ticket) => Number(ticket.id.replace('TCK-', '')))
+      .filter((value) => Number.isFinite(value));
+    const nextNumber = Math.max(...numericIds, 1000) + 1;
+    const now = nowIso();
+    const topic = topics.find((item) => item.id === 'payment-failed') ?? topics[0]!;
+    const sessionId = `voice_${crypto.randomUUID()}`;
+    const voiceSession: VoiceSession = {
+      id: sessionId,
+      roomName: `legend-${sessionId}`,
+      status: 'connecting',
+      startedAt: now,
+      mode: 'mock',
+      appContext,
+      detectedIntent: 'payment_failed_after_3ds',
+      summary: 'Customer started an in-app voice session from checkout after a 3DS payment failure.',
+      transcript: initialVoiceTranscript(now),
+    };
+    const newTicket: Ticket = {
+      id: `TCK-${nextNumber}`,
+      subject: 'In-app voice: payment failed after 3DS',
+      description:
+        'Authenticated mobile user started a contextual voice support session from payment checkout.',
+      customerId: customer.id,
+      customerName: appContext.fullName || customer.name,
+      customerEmail: appContext.email || customer.email,
+      company: customer.company,
+      priority: 'High',
+      status: 'Open',
+      assigneeId: null,
+      assigneeName: 'Unassigned',
+      team: 'Billing',
+      tags: ['voice', 'in-app', 'payment', '3ds'],
+      createdAt: now,
+      updatedAt: now,
+      topicId: topic.id,
+      projectIds: topic.projectIds,
+      source: 'support',
+      relatedTicketIds: [],
+      mergedTicketIds: [],
+      knownIssueIds: [],
+      voiceSession,
+      sla: {
+        state: 'Due soon',
+        firstResponseDueAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+        resolutionDueAt: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
+      },
+      messages: [
+        {
+          id: crypto.randomUUID(),
+          kind: 'customer',
+          authorName: appContext.fullName,
+          authorRole: 'Customer',
+          body: 'Voice session started from the mobile app with checkout context attached.',
+          createdAt: now,
+        },
+      ],
+      activity: [
+        activity('Legend Voice', 'Created voice ticket from authenticated in-app session'),
+      ],
+    };
+    setTickets((current) => [newTicket, ...current]);
+    return newTicket;
+  }, [tickets]);
+
   const value = useMemo<TicketStore>(
     () => ({
       tickets,
@@ -300,6 +380,7 @@ export function TicketProvider({ children }: { children: ReactNode }) {
       addInternalNote,
       addPublicReply,
       createTicket,
+      createVoiceTicket,
     }),
     [
       addInternalNote,
@@ -309,6 +390,7 @@ export function TicketProvider({ children }: { children: ReactNode }) {
       bulkUpdatePriority,
       bulkUpdateStatus,
       createTicket,
+      createVoiceTicket,
       tickets,
       updateTicket,
     ],

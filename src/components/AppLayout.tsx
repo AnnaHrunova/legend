@@ -4,6 +4,7 @@ import {
   Flame,
   Inbox,
   LayoutDashboard,
+  PhoneCall,
   Plus,
   Search,
   Settings,
@@ -13,12 +14,15 @@ import {
 import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { FeedbackButton } from './feedback/FeedbackButton';
+import { track } from '../analytics/analytics';
 import { TesterProfileControl } from './tester/TesterProfileControl';
 import { getTesterProfile, type TesterProfile } from '../analytics/testerProfile';
+import { demoVoiceAppContext } from '../data/mockVoiceSupport';
 import { currentUser } from '../data/mockUsers';
 import { applyTicketView } from '../domain/ticketViews';
 import { useTickets } from '../state/ticketStore';
 import { useTicketViews } from '../state/viewStore';
+import { startVoiceSession } from '../voice/voiceSessionApi';
 
 const navItems = [
   { label: 'Inbox', to: '/views/my-tickets', icon: Inbox },
@@ -30,12 +34,94 @@ const navItems = [
 
 export function AppLayout() {
   const navigate = useNavigate();
-  const { tickets } = useTickets();
+  const { tickets, createVoiceTicket, updateTicket } = useTickets();
   const { systemViews, customViews } = useTicketViews();
+  const [voiceStarting, setVoiceStarting] = useState(false);
 
   function viewCount(viewId: string) {
     const view = [...systemViews, ...customViews].find((item) => item.id === viewId);
     return view ? applyTicketView(tickets, view, currentUser.id).length : 0;
+  }
+
+  async function startDemoVoiceTicket() {
+    if (voiceStarting) return;
+    setVoiceStarting(true);
+    const ticket = createVoiceTicket(demoVoiceAppContext);
+    const voiceSession = ticket.voiceSession;
+    navigate(`/tickets/${ticket.id}`);
+    track('ticket_opened', {
+      ticketId: ticket.id,
+      channel: 'voice',
+      source: 'in_app_call',
+      voiceSessionId: voiceSession?.id,
+      hasAppContext: true,
+      currentScreen: demoVoiceAppContext.currentScreen,
+      platform: demoVoiceAppContext.platform,
+    });
+
+    if (!voiceSession) {
+      setVoiceStarting(false);
+      return;
+    }
+
+    try {
+      const started = await startVoiceSession({
+        ticketId: ticket.id,
+        voiceSessionId: voiceSession.id,
+        roomName: voiceSession.roomName,
+        appContext: demoVoiceAppContext,
+      });
+      updateTicket(
+        ticket.id,
+        {
+          voiceSession: {
+            ...voiceSession,
+            status: 'ai_active',
+            roomName: started.roomName,
+            livekitUrl: started.livekitUrl,
+            supportToken: started.supportToken,
+            customerToken: started.customerToken,
+            agentDispatchId: started.agentDispatchId,
+            mode: started.mode,
+            setupWarnings: started.setupWarnings,
+          },
+        },
+        started.mode === 'livekit' ? 'Connected LiveKit voice room' : 'Started voice session in mock mode',
+        'Legend Voice',
+      );
+      track('ticket_status_changed', {
+        ticketId: ticket.id,
+        channel: 'voice',
+        voiceSessionId: voiceSession.id,
+        fromStatus: 'connecting',
+        toStatus: 'ai_active',
+        mode: started.mode,
+      });
+    } catch (error) {
+      updateTicket(
+        ticket.id,
+        {
+          voiceSession: {
+            ...voiceSession,
+            status: 'failed',
+            outcome: 'failed',
+            setupWarnings: [error instanceof Error ? error.message : String(error)],
+          },
+          status: 'Escalated',
+        },
+        'Voice session failed to start',
+        'Legend Voice',
+      );
+      track('ticket_status_changed', {
+        ticketId: ticket.id,
+        channel: 'voice',
+        voiceSessionId: voiceSession.id,
+        fromStatus: 'connecting',
+        toStatus: 'failed',
+      });
+    } finally {
+      setVoiceStarting(false);
+    }
   }
 
   return (
@@ -139,6 +225,15 @@ export function AppLayout() {
           <button className="primary-button" onClick={() => navigate('/tickets/new')}>
             <Plus size={17} />
             Create ticket
+          </button>
+          <button
+            className="voice-start-button"
+            disabled={voiceStarting}
+            onClick={startDemoVoiceTicket}
+            title="Start a contextual in-app voice support ticket"
+          >
+            <PhoneCall size={17} />
+            {voiceStarting ? 'Starting voice' : 'Voice ticket'}
           </button>
           <TesterProfileControl />
           <SupportAgentIdentity />

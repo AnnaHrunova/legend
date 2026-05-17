@@ -41,7 +41,9 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  IMAGE_NAME: ghcr.io/annahrunova/legend-frontend
+  FRONTEND_IMAGE_NAME: ghcr.io/annahrunova/legend-frontend
+  VOICE_API_IMAGE_NAME: ghcr.io/annahrunova/legend-voice-api
+  VOICE_AGENT_IMAGE_NAME: ghcr.io/annahrunova/legend-voice-agent
 
 jobs:
   build-and-push:
@@ -66,12 +68,35 @@ jobs:
         with:
           context: .
           file: Dockerfile.frontend
+          target: production
           push: true
           tags: |
-            ${{ env.IMAGE_NAME }}:latest
-            ${{ env.IMAGE_NAME }}:${{ github.sha }}
+            ${{ env.FRONTEND_IMAGE_NAME }}:latest
+            ${{ env.FRONTEND_IMAGE_NAME }}:${{ github.sha }}
           build-args: |
             VITE_POSTHOG_KEY=${{ secrets.VITE_POSTHOG_KEY }}
+
+      - name: Build and push voice API image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.frontend
+          target: voice-api
+          push: true
+          tags: |
+            ${{ env.VOICE_API_IMAGE_NAME }}:latest
+            ${{ env.VOICE_API_IMAGE_NAME }}:${{ github.sha }}
+
+      - name: Build and push voice agent image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.frontend
+          target: voice-agent
+          push: true
+          tags: |
+            ${{ env.VOICE_AGENT_IMAGE_NAME }}:latest
+            ${{ env.VOICE_AGENT_IMAGE_NAME }}:${{ github.sha }}
 
   deploy:
     if: ${{ inputs.operation == 'deploy_frontend' || inputs.operation == '' }}
@@ -143,10 +168,47 @@ jobs:
             "HETZNER_DOMAIN='${HETZNER_DOMAIN_CLEAN}' CADDY_EMAIL='${CADDY_EMAIL}' GHCR_USERNAME='${GHCR_USERNAME}' GHCR_TOKEN='${GHCR_TOKEN}' bash -s" <<'REMOTE_SCRIPT'
           set -euo pipefail
           cd /opt/legend
-          printf 'HETZNER_DOMAIN=%s\nCADDY_EMAIL=%s\n' "$HETZNER_DOMAIN" "$CADDY_EMAIL" > .env
+
+          touch .env
+          chmod 600 .env
+
+          upsert_env() {
+            key="$1"
+            value="$2"
+            tmp_file="$(mktemp)"
+            if grep -q "^${key}=" .env; then
+              sed "s#^${key}=.*#${key}=${value}#" .env > "$tmp_file"
+            else
+              cat .env > "$tmp_file"
+              printf '%s=%s\n' "$key" "$value" >> "$tmp_file"
+            fi
+            cat "$tmp_file" > .env
+            rm -f "$tmp_file"
+          }
+
+          require_env_name() {
+            key="$1"
+            if ! grep -q "^${key}=" .env; then
+              echo "Missing required /opt/legend/.env variable: ${key}"
+              exit 1
+            fi
+          }
+
+          upsert_env HETZNER_DOMAIN "$HETZNER_DOMAIN"
+          upsert_env CADDY_EMAIL "$CADDY_EMAIL"
+
+          require_env_name LIVEKIT_URL
+          require_env_name LIVEKIT_API_KEY
+          require_env_name LIVEKIT_API_SECRET
+          require_env_name LIVEKIT_AGENT_NAME
+          require_env_name OPENAI_API_KEY
+          require_env_name OPENAI_REALTIME_VOICE
+
           echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
+          docker compose -f docker-compose.hetzner.yml config >/dev/null
           docker compose -f docker-compose.hetzner.yml pull
           docker compose -f docker-compose.hetzner.yml up -d
+          docker compose -f docker-compose.hetzner.yml ps
           docker image prune -f
           REMOTE_SCRIPT
         env:
@@ -172,17 +234,20 @@ jobs:
           fi
 
           SITE_URL="https://${DOMAIN}"
+          HEALTH_URL="${SITE_URL}/healthz"
           for attempt in 1 2 3 4 5; do
-            if curl -fsSI "${SITE_URL}" >/dev/null; then
+            if curl -fsSI "${SITE_URL}" >/dev/null && curl -fsS "${HEALTH_URL}" | grep -q '"livekitConfigured":true'; then
               curl -fsSI "${SITE_URL}" | sed -n '1,12p'
+              curl -fsS "${HEALTH_URL}"
               exit 0
             fi
 
-            echo "Site is not ready yet, retrying in 10 seconds (${attempt}/5)..."
+            echo "Site or voice API is not ready yet, retrying in 10 seconds (${attempt}/5)..."
             sleep 10
           done
 
           curl -fsSI "${SITE_URL}"
+          curl -fsS "${HEALTH_URL}"
         env:
           HETZNER_DOMAIN: ${{ secrets.HETZNER_DOMAIN }}
 

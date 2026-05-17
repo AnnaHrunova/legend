@@ -1,5 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
+import {
+  ControlBar,
+  LiveKitRoom,
+  RoomAudioRenderer,
+  useTranscriptions,
+} from '@livekit/components-react';
+import '@livekit/components-styles';
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
+import { PhoneCall, PhoneOff, UserPlus } from 'lucide-react';
 import { track } from '../analytics/analytics';
 import { getProject, getTopic } from '../analytics/topics/domain';
 import { PriorityBadge, SlaBadge, StatusBadge } from '../components/Badges';
@@ -38,6 +46,7 @@ export function TicketDetailPage() {
   const [reviewReplySent, setReviewReplySent] = useState(false);
   const [note, setNote] = useState('');
   const [newTag, setNewTag] = useState('');
+  const [voiceRoomOpen, setVoiceRoomOpen] = useState(false);
   const activeTicketId = ticket?.id;
 
   const possibleDuplicates = useMemo(
@@ -292,6 +301,97 @@ export function TicketDetailPage() {
     });
   }
 
+  function updateVoiceSession(
+    patch: NonNullable<Ticket['voiceSession']>,
+    action: string,
+    ticketPatch: Partial<Ticket> = {},
+  ) {
+    updateTicket(
+      activeTicket.id,
+      {
+        ...ticketPatch,
+        voiceSession: patch,
+      },
+      action,
+      'Legend Voice',
+    );
+  }
+
+  function requestVoiceHandoff() {
+    const voiceSession = activeTicket.voiceSession;
+    if (!voiceSession || voiceSession.status === 'human_handoff_requested') return;
+    updateVoiceSession(
+      {
+        ...voiceSession,
+        status: 'human_handoff_requested',
+        handoffReason: 'Support specialist requested from ticket detail.',
+        outcome: 'human_handoff',
+      },
+      'Requested human handoff for voice session',
+      { status: 'Escalated' },
+    );
+    track('ticket_status_changed', {
+      ticketId: activeTicket.id,
+      channel: 'voice',
+      voiceSessionId: voiceSession.id,
+      fromStatus: voiceSession.status,
+      toStatus: 'human_handoff_requested',
+      reason: 'support_requested_handoff',
+    });
+  }
+
+  function joinVoiceSession() {
+    const voiceSession = activeTicket.voiceSession;
+    if (!voiceSession) return;
+    setVoiceRoomOpen(true);
+    if (voiceSession.status !== 'human_active') {
+      updateVoiceSession(
+        {
+          ...voiceSession,
+          status: 'human_active',
+          outcome: 'human_handoff',
+        },
+        'Support agent joined voice session',
+      );
+      track('ticket_status_changed', {
+        ticketId: activeTicket.id,
+        channel: 'voice',
+        voiceSessionId: voiceSession.id,
+        fromStatus: voiceSession.status,
+        toStatus: 'human_active',
+        reason: 'agent_joined_voice_room',
+      });
+    }
+  }
+
+  function endVoiceSession(outcome: NonNullable<NonNullable<Ticket['voiceSession']>['outcome']>) {
+    const voiceSession = activeTicket.voiceSession;
+    if (!voiceSession) return;
+    const nextStatus = outcome === 'abandoned' ? 'abandoned' : 'resolved';
+    updateVoiceSession(
+      {
+        ...voiceSession,
+        status: nextStatus,
+        outcome,
+        endedAt: new Date().toISOString(),
+        summary:
+          voiceSession.summary ??
+          'Voice session ended. Review the transcript and attached app context before closing follow-up.',
+      },
+      outcome === 'abandoned' ? 'Marked voice session abandoned' : 'Resolved voice session',
+      { status: outcome === 'abandoned' ? 'Pending' : 'Solved' },
+    );
+    track('ticket_status_changed', {
+      ticketId: activeTicket.id,
+      channel: 'voice',
+      voiceSessionId: voiceSession.id,
+      fromStatus: voiceSession.status,
+      toStatus: nextStatus,
+      resolvedBy: outcome === 'ai_resolved' ? 'ai' : 'human',
+    });
+    setVoiceRoomOpen(false);
+  }
+
   return (
     <section className="detail-layout">
       <div className="ticket-detail-main">
@@ -383,6 +483,18 @@ export function TicketDetailPage() {
             </dl>
             <blockquote>{ticket.description}</blockquote>
           </section>
+        )}
+
+        {ticket.voiceSession && (
+          <VoiceSessionPanel
+            ticket={ticket}
+            voiceRoomOpen={voiceRoomOpen}
+            onJoin={joinVoiceSession}
+            onRequestHandoff={requestVoiceHandoff}
+            onResolveByAi={() => endVoiceSession('ai_resolved')}
+            onResolveByHuman={() => endVoiceSession('human_handoff')}
+            onAbandon={() => endVoiceSession('abandoned')}
+          />
         )}
 
         <section className="conversation-panel">
@@ -720,6 +832,149 @@ type DuplicateSuggestion = {
   ticket: Ticket;
   reasons: DuplicateReason[];
 };
+
+function VoiceSessionPanel({
+  ticket,
+  voiceRoomOpen,
+  onJoin,
+  onRequestHandoff,
+  onResolveByAi,
+  onResolveByHuman,
+  onAbandon,
+}: {
+  ticket: Ticket;
+  voiceRoomOpen: boolean;
+  onJoin: () => void;
+  onRequestHandoff: () => void;
+  onResolveByAi: () => void;
+  onResolveByHuman: () => void;
+  onAbandon: () => void;
+}) {
+  const voiceSession = ticket.voiceSession!;
+  const context = voiceSession.appContext;
+  const canJoinLiveRoom = Boolean(voiceSession.livekitUrl && voiceSession.supportToken);
+
+  return (
+    <section className="voice-session-panel">
+      <div className="section-header">
+        <div>
+          <p className="eyebrow">In-app voice</p>
+          <h2>Voice session</h2>
+        </div>
+        <div className="voice-status-stack">
+          <span className={`voice-status voice-status-${voiceSession.status}`}>
+            {voiceStatusLabel(voiceSession.status)}
+          </span>
+          <span>{voiceSession.mode === 'livekit' ? 'LiveKit room ready' : 'Mock mode'}</span>
+        </div>
+      </div>
+
+      <div className="voice-context-grid">
+        <dl>
+          <div><dt>User</dt><dd>{context.fullName}</dd></div>
+          <div><dt>Platform</dt><dd>{context.platform === 'ios' ? 'iOS' : 'Android'} · {context.appVersion}</dd></div>
+          <div><dt>Screen</dt><dd>{context.currentScreen}</dd></div>
+          <div><dt>Last action</dt><dd>{context.lastAction}</dd></div>
+        </dl>
+        <div className="voice-ai-summary">
+          <strong>{voiceSession.detectedIntent ?? 'Intent pending'}</strong>
+          <p>{voiceSession.summary ?? 'AI summary will appear after the voice session has enough context.'}</p>
+          {voiceSession.handoffReason && <em>{voiceSession.handoffReason}</em>}
+        </div>
+      </div>
+
+      {voiceSession.setupWarnings?.length ? (
+        <div className="voice-warning-list">
+          {voiceSession.setupWarnings.map((warning) => (
+            <span key={warning}>{warning}</span>
+          ))}
+        </div>
+      ) : null}
+
+      <div className="voice-action-row">
+        <button type="button" disabled={!canJoinLiveRoom} onClick={onJoin}>
+          <PhoneCall size={16} />
+          Join call
+        </button>
+        <button type="button" onClick={onRequestHandoff}>
+          <UserPlus size={16} />
+          Request handoff
+        </button>
+        <button type="button" onClick={onResolveByAi}>AI resolved</button>
+        <button type="button" onClick={onResolveByHuman}>Human resolved</button>
+        <button type="button" onClick={onAbandon}>
+          <PhoneOff size={16} />
+          Abandoned
+        </button>
+      </div>
+
+      {voiceRoomOpen && canJoinLiveRoom && (
+        <LiveKitRoom
+          audio
+          connect
+          serverUrl={voiceSession.livekitUrl}
+          token={voiceSession.supportToken}
+          className="voice-livekit-room"
+        >
+          <RoomAudioRenderer />
+          <LiveVoiceTranscriptFallback />
+          <ControlBar controls={{ camera: false, screenShare: false, chat: false }} />
+        </LiveKitRoom>
+      )}
+
+      <div className="voice-transcript-list">
+        {voiceSession.transcript.map((turn) => (
+          <article key={turn.id} className={`voice-turn voice-turn-${turn.speaker}`}>
+            <span>{voiceSpeakerLabel(turn.speaker)}</span>
+            <p>{turn.text}</p>
+            <time>{formatDate(turn.createdAt)}</time>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function LiveVoiceTranscriptFallback() {
+  const transcriptions = useTranscriptions();
+  if (!transcriptions.length) {
+    return <span className="voice-live-caption">Live transcription will appear when the agent publishes text.</span>;
+  }
+
+  return (
+    <div className="voice-live-transcriptions">
+      {transcriptions.slice(-4).map((item) => (
+        <span key={`${item.participantInfo.identity}-${item.streamInfo.id}`}>
+          <strong>{item.participantInfo.identity}</strong>
+          {item.text}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function voiceStatusLabel(status: NonNullable<Ticket['voiceSession']>['status']) {
+  const labels: Record<NonNullable<Ticket['voiceSession']>['status'], string> = {
+    connecting: 'Connecting',
+    ai_active: 'AI active',
+    human_handoff_requested: 'Handoff requested',
+    human_active: 'Human active',
+    resolved: 'Resolved',
+    abandoned: 'Abandoned',
+    failed: 'Failed',
+  };
+  return labels[status];
+}
+
+function voiceSpeakerLabel(speaker: NonNullable<Ticket['voiceSession']>['transcript'][number]['speaker']) {
+  const labels = {
+    user: 'Customer',
+    ai: 'AI',
+    agent: 'Agent',
+    system: 'System',
+  };
+  return labels[speaker];
+}
 
 function MacroPicker({
   ticket,
