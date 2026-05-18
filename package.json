@@ -13,8 +13,8 @@
     "audit:ai:zendesk:prod": "node scripts/ai-zendesk-agent.mjs --mode triage --url https://app.legenddesk.com"
   },
   "dependencies": {
-    "@livekit/agents": "^1.4.2",
-    "@livekit/agents-plugin-openai": "^1.4.2",
+    "@livekit/agents": "^1.4.3",
+    "@livekit/agents-plugin-openai": "^1.4.3",
     "@livekit/components-react": "^2.9.21",
     "@livekit/components-styles": "^1.2.0",
     "cors": "^2.8.6",

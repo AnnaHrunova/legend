@@ -202,6 +202,9 @@ jobs:
           if ! grep -q "^POSTGRES_PASSWORD=" .env; then
             upsert_env POSTGRES_PASSWORD "$(openssl rand -hex 24)"
           fi
+          if ! grep -q "^OPENAI_REALTIME_MODEL=" .env; then
+            upsert_env OPENAI_REALTIME_MODEL "gpt-realtime-2"
+          fi
 
           require_env_name CADDY_BASIC_AUTH_USER
           require_env_name CADDY_BASIC_AUTH_HASH
@@ -210,6 +213,7 @@ jobs:
           require_env_name LIVEKIT_API_SECRET
           require_env_name LIVEKIT_AGENT_NAME
           require_env_name OPENAI_API_KEY
+          require_env_name OPENAI_REALTIME_MODEL
           require_env_name OPENAI_REALTIME_VOICE
 
           echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
@@ -463,6 +467,7 @@ jobs:
             test -n "$LIVEKIT_API_SECRET" && echo "LIVEKIT_API_SECRET=set" || echo "LIVEKIT_API_SECRET=missing"
             test -n "$OPENAI_API_KEY" && echo "OPENAI_API_KEY=set" || echo "OPENAI_API_KEY=missing"
             printf "LIVEKIT_AGENT_NAME=%s\n" "${LIVEKIT_AGENT_NAME:-}"
+            printf "OPENAI_REALTIME_MODEL=%s\n" "${OPENAI_REALTIME_MODEL:-}"
             printf "OPENAI_REALTIME_VOICE=%s\n" "${OPENAI_REALTIME_VOICE:-}"
           '
 

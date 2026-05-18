@@ -207,6 +207,7 @@ LIVEKIT_API_KEY
 LIVEKIT_API_SECRET
 LIVEKIT_AGENT_NAME
 OPENAI_API_KEY
+OPENAI_REALTIME_MODEL
 OPENAI_REALTIME_VOICE
 ```
 
@@ -1229,11 +1230,12 @@ LIVEKIT_API_KEY
 LIVEKIT_API_SECRET
 LIVEKIT_AGENT_NAME
 OPENAI_API_KEY
+OPENAI_REALTIME_MODEL
 OPENAI_REALTIME_VOICE
 POSTGRES_PASSWORD
 ```
 
-The deploy workflow preserves existing `/opt/legend/.env` values. It creates `POSTGRES_PASSWORD` automatically if missing. Do not print secrets in logs.
+The deploy workflow preserves existing `/opt/legend/.env` values. It creates `POSTGRES_PASSWORD` and the default `OPENAI_REALTIME_MODEL=gpt-realtime-2` automatically if missing. Do not print secrets in logs.
 
 Server setup, DNS, and required GitHub secrets are documented in:
 

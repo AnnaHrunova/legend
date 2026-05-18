@@ -7,6 +7,7 @@ dotenv.config({ path: '.env.local' });
 dotenv.config();
 
 const agentName = process.env.LIVEKIT_AGENT_NAME ?? 'legend-voice-agent';
+const realtimeModel = process.env.OPENAI_REALTIME_MODEL ?? 'gpt-realtime-2';
 const realtimeVoice = process.env.OPENAI_REALTIME_VOICE ?? 'coral';
 
 class LegendDeskVoiceAgent extends voice.Agent {
@@ -24,6 +25,8 @@ export default defineAgent({
       room: ctx.room.name,
       ticketId: sessionContext.ticketId,
       voiceSessionId: sessionContext.voiceSessionId,
+      realtimeModel,
+      realtimeVoice,
     });
 
     await ctx.connect();
@@ -34,9 +37,7 @@ export default defineAgent({
     });
 
     const session = new voice.AgentSession({
-      llm: new openai.realtime.RealtimeModel({
-        voice: realtimeVoice,
-      }),
+      llm: createRealtimeModel(),
     });
 
     session.on(voice.AgentSessionEventTypes.AgentStateChanged, (event) => {
@@ -76,6 +77,13 @@ export default defineAgent({
 });
 
 cli.runApp(new ServerOptions({ agent: fileURLToPath(import.meta.url), agentName }));
+
+function createRealtimeModel() {
+  return new openai.realtime.RealtimeModel({
+    model: realtimeModel,
+    voice: realtimeVoice,
+  });
+}
 
 function parseMetadata(value) {
   if (!value) return {};

@@ -147,6 +147,7 @@ LIVEKIT_API_KEY
 LIVEKIT_API_SECRET
 LIVEKIT_AGENT_NAME
 OPENAI_API_KEY
+OPENAI_REALTIME_MODEL
 OPENAI_REALTIME_VOICE
 ```
 
@@ -188,7 +189,8 @@ HETZNER_DOMAIN=app.legenddesk.com
 CADDY_EMAIL=your-email@example.com
 ```
 
-It does not overwrite existing LiveKit/OpenAI voice variables.
+It does not overwrite existing LiveKit/OpenAI voice variables. If `OPENAI_REALTIME_MODEL`
+is missing, the workflow initializes it to `gpt-realtime-2`.
 
 That keeps manual server checks clean:
 
