@@ -15,12 +15,18 @@ Run from the Legend repo:
 npm run audit:ai:zendesk:prod
 ```
 
-Required local secret:
+Required local authorization:
 
 ```env
-OPENAI_API_KEY=...
+CODEX_HOME=/path/to/codex-home
+# or:
+# CODEX_AUTH_JSON=/path/to/auth.json
 OPENAI_MODEL=gpt-5.5
 ```
+
+The agent uses Codex/ChatGPT auth from `auth.json`. It rejects API-key auth on
+purpose, because the production path must share the same Codex authorization
+model as Nexus instead of carrying a separate OpenAI API key.
 
 Local outputs:
 
@@ -90,24 +96,25 @@ Required GitHub Actions secrets:
 - `HETZNER_HOST`
 - `HETZNER_PORT` (optional, defaults to `22`)
 - `HETZNER_SSH_KEY`
-- `OPENAI_API_KEY`
 
 Optional GitHub Actions secret:
 
 - `OPENAI_MODEL` (defaults to `gpt-5.5`)
 
-The workflow writes `OPENAI_API_KEY` and `OPENAI_MODEL` to
+The workflow writes only runtime options such as `OPENAI_MODEL` to
 `/opt/legend/ai-zendesk-agent/env/legend-ai-zendesk-agent.env` with `600`
-permissions. Secrets are not stored in git.
+permissions. Model authorization comes from the server Codex auth file mounted
+read-only into the Playwright container, by default
+`/var/lib/codex-nexus/auth.json`.
 
 Manual trigger:
 
 ```bash
 gh workflow run deploy-hetzner.yml \
   --repo AnnaHrunova/legend \
-  --ref codex/ai-zendesk-agent \
+  --ref main \
   -f operation=run_ai_zendesk_agent \
-  -f agent_branch=codex/ai-zendesk-agent \
+  -f agent_branch=main \
   -f agent_base_url=https://app.legenddesk.com \
   -f agent_mode=triage \
   -f agent_max_steps=8
@@ -118,9 +125,9 @@ Optional model override for one run:
 ```bash
 gh workflow run deploy-hetzner.yml \
   --repo AnnaHrunova/legend \
-  --ref codex/ai-zendesk-agent \
+  --ref main \
   -f operation=run_ai_zendesk_agent \
-  -f agent_branch=codex/ai-zendesk-agent \
+  -f agent_branch=main \
   -f agent_model=gpt-5.5
 ```
 

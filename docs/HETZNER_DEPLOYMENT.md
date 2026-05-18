@@ -157,8 +157,12 @@ present without printing their values.
 Required for the on-demand AI Zendesk Agent workflow:
 
 ```text
-OPENAI_API_KEY     # used only by deploy-hetzner.yml operation=run_ai_zendesk_agent
+Codex auth.json on the server, default /var/lib/codex-nexus/auth.json
 ```
+
+The AI Zendesk Agent uses Codex/ChatGPT authorization and does not require an
+`OPENAI_API_KEY` GitHub secret. The voice stack still uses `OPENAI_API_KEY`
+separately through `/opt/legend/.env`.
 
 The workflow deploys as the fixed server user `deploy`, so `HETZNER_USER` is not required.
 
@@ -283,9 +287,9 @@ Run it through GitHub Actions:
 ```bash
 gh workflow run deploy-hetzner.yml \
   --repo AnnaHrunova/legend \
-  --ref codex/ai-zendesk-agent \
+  --ref main \
   -f operation=run_ai_zendesk_agent \
-  -f agent_branch=codex/ai-zendesk-agent \
+  -f agent_branch=main \
   -f agent_base_url=https://app.legenddesk.com \
   -f agent_mode=triage \
   -f agent_max_steps=8

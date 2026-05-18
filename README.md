@@ -665,7 +665,7 @@ The prototype includes support-focused workflow tools. These are intentionally n
 ## AI Zendesk Agent
 
 Legend includes a local AI-powered support tester for prototype validation.
-The agent uses Playwright to inspect the deployed app and an OpenAI model to act
+The agent uses Playwright to inspect the deployed app and a Codex-authenticated model to act
 as a senior Zendesk power user. It writes evidence-backed findings for Codex
 triage and prepares a separate fix prompt that should only be used after owner
 confirmation.
@@ -676,9 +676,10 @@ Run:
 npm run audit:ai:zendesk:prod
 ```
 
-The runner requires `OPENAI_API_KEY` in the environment or `.env.local`. The
-default model is `gpt-5.5`; override it with `OPENAI_MODEL` or `--model`.
-Only `triage` mode is supported locally right now.
+The runner uses Codex/ChatGPT authorization from `CODEX_HOME/auth.json` or
+`CODEX_AUTH_JSON`; API-key auth is rejected. The default model is `gpt-5.5`;
+override it with `OPENAI_MODEL` or `--model`. Only `triage` mode is supported
+locally right now.
 
 The agent opens `https://app.legenddesk.com`, explores the UI, captures
 screenshots, and writes:

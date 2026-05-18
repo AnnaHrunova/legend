@@ -15,7 +15,7 @@ on:
       agent_branch:
         description: 'Repo branch containing the AI Zendesk agent runner'
         required: false
-        default: 'codex/ai-zendesk-agent'
+        default: 'main'
       agent_base_url:
         description: 'Legend app URL to audit'
         required: false
@@ -25,7 +25,7 @@ on:
         required: false
         default: 'triage'
       agent_model:
-        description: 'OpenAI model override. Defaults to OPENAI_MODEL secret or gpt-5.5.'
+        description: 'Codex model override. Defaults to OPENAI_MODEL secret or gpt-5.5.'
         required: false
         default: ''
       agent_max_steps:
@@ -291,14 +291,9 @@ jobs:
             echo "agent_max_steps must be an integer from 1 to 20."
             exit 1
           fi
-          if [ -z "${OPENAI_API_KEY}" ]; then
-            echo "OPENAI_API_KEY GitHub Actions secret is required."
-            exit 1
-          fi
         env:
           MODE: ${{ inputs.agent_mode }}
           MAX_STEPS: ${{ inputs.agent_max_steps }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
 
       - name: Prepare SSH key
         run: |
@@ -317,7 +312,6 @@ jobs:
 
           mkdir -p "${RUNNER_TEMP}/legend-ai"
           {
-            printf 'OPENAI_API_KEY=%s\n' "${OPENAI_API_KEY}"
             printf 'OPENAI_MODEL=%s\n' "${OPENAI_MODEL_VALUE}"
           } > "${RUNNER_TEMP}/legend-ai/legend-ai-zendesk-agent.env"
 
@@ -382,7 +376,6 @@ jobs:
           INPUT_MODE: ${{ inputs.agent_mode }}
           INPUT_MODEL: ${{ inputs.agent_model }}
           INPUT_MAX_STEPS: ${{ inputs.agent_max_steps }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           OPENAI_MODEL_SECRET: ${{ secrets.OPENAI_MODEL }}
 
       - name: Run agent on Hetzner

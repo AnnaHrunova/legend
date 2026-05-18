@@ -11,6 +11,7 @@ const DEFAULT_OUT_DIR = '.legend-ai-audits';
 const DEFAULT_MODEL = 'gpt-5.5';
 const DEFAULT_MAX_STEPS = 8;
 const DEFAULT_MODE = 'triage';
+const DEFAULT_CODEX_BACKEND_BASE_URL = 'https://chatgpt.com/backend-api/codex';
 const MAX_BODY_CHARS = 5_500;
 const MAX_HISTORY_CHARS = 8_000;
 const MODEL_TIMEOUT_MS = 120_000;
@@ -82,6 +83,63 @@ Options:
 `);
 }
 
+function resolveCodexModelAuth() {
+  const authPath = process.env.CODEX_AUTH_JSON || path.join(
+    process.env.CODEX_HOME || path.join(process.env.HOME || '', '.codex'),
+    'auth.json',
+  );
+  const auth = readJsonFile(authPath);
+  const authMode = auth.auth_mode || (auth.OPENAI_API_KEY ? 'apikey' : 'chatgpt');
+
+  if (authMode === 'apikey' || auth.OPENAI_API_KEY) {
+    throw new Error(`AI Zendesk agent requires Codex/ChatGPT auth, not OPENAI_API_KEY auth: ${authPath}`);
+  }
+
+  const accessToken = auth.tokens?.access_token;
+  if (!accessToken) {
+    throw new Error(`AI Zendesk agent requires Codex auth tokens in ${authPath}`);
+  }
+
+  const accountId = auth.tokens?.account_id || readChatGptClaim(auth.tokens?.id_token, 'chatgpt_account_id');
+  const headers = {
+    Authorization: `Bearer ${accessToken}`,
+  };
+  if (accountId) headers['ChatGPT-Account-ID'] = accountId;
+  if (readChatGptClaim(auth.tokens?.id_token, 'chatgpt_account_is_fedramp')) {
+    headers['X-OpenAI-Fedramp'] = 'true';
+  }
+
+  return {
+    baseUrl: (process.env.CODEX_BACKEND_BASE_URL || DEFAULT_CODEX_BACKEND_BASE_URL).replace(/\/+$/, ''),
+    headers,
+  };
+}
+
+function readJsonFile(filePath) {
+  try {
+    return JSON.parse(readFileSync(filePath, 'utf8'));
+  } catch (error) {
+    throw new Error(`Could not read Codex auth file ${filePath}: ${error.message}`);
+  }
+}
+
+function readChatGptClaim(jwt, claimName) {
+  const claims = decodeJwtPayload(jwt);
+  return claims?.['https://api.openai.com/auth']?.[claimName];
+}
+
+function decodeJwtPayload(jwt) {
+  if (typeof jwt !== 'string') return undefined;
+  const payload = jwt.split('.')[1];
+  if (!payload) return undefined;
+
+  try {
+    return JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
+  } catch {
+    return undefined;
+  }
+}
+
 async function main() {
   loadEnvFile('.env.local');
   loadEnvFile('.env');
@@ -91,12 +149,9 @@ async function main() {
   const screenshotDir = path.join(outDir, 'screenshots');
   await mkdir(screenshotDir, { recursive: true });
 
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) {
-    throw new Error('OPENAI_API_KEY is required for the AI Zendesk agent');
-  }
+  const modelAuth = resolveCodexModelAuth();
 
-  const result = await runAgent({ ...args, outDir, screenshotDir, apiKey });
+  const result = await runAgent({ ...args, outDir, screenshotDir, modelAuth });
   await writeReportFiles(result, outDir);
   console.log(`AI Zendesk agent report: ${path.join(outDir, 'latest-ai.md')}`);
   console.log(`Summary: ${path.join(outDir, 'latest-ai-summary.md')}`);
@@ -142,7 +197,7 @@ async function runAgent(args) {
       visited.push(evidence);
 
       const decision = await requestAgentDecision({
-        apiKey: args.apiKey,
+        modelAuth: args.modelAuth,
         model: args.model,
         baseUrl: args.baseUrl,
         step,
@@ -171,7 +226,7 @@ async function runAgent(args) {
   }
 
   const finalFindings = await requestFinalFindings({
-    apiKey: args.apiKey,
+    modelAuth: args.modelAuth,
     model: args.model,
     baseUrl: args.baseUrl,
     visited,
@@ -238,7 +293,7 @@ async function collectControls(page) {
     .catch(() => []);
 }
 
-async function requestAgentDecision({ apiKey, model, baseUrl, step, maxSteps, evidence, history, findings }) {
+async function requestAgentDecision({ modelAuth, model, baseUrl, step, maxSteps, evidence, history, findings }) {
   const content = [
     {
       type: 'input_text',
@@ -264,10 +319,10 @@ async function requestAgentDecision({ apiKey, model, baseUrl, step, maxSteps, ev
     },
   ];
 
-  return parseJsonResponse(await createResponse({ apiKey, model, content }));
+  return parseJsonResponse(await createResponse({ modelAuth, model, content }));
 }
 
-async function requestFinalFindings({ apiKey, model, baseUrl, visited, history, findings }) {
+async function requestFinalFindings({ modelAuth, model, baseUrl, visited, history, findings }) {
   const content = [
     {
       type: 'input_text',
@@ -285,19 +340,19 @@ async function requestFinalFindings({ apiKey, model, baseUrl, visited, history, 
     },
   ];
 
-  const parsed = parseJsonResponse(await createResponse({ apiKey, model, content }));
+  const parsed = parseJsonResponse(await createResponse({ modelAuth, model, content }));
   return Array.isArray(parsed.findings) ? parsed.findings : [];
 }
 
-async function createResponse({ apiKey, model, content }) {
+async function createResponse({ modelAuth, model, content }) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), MODEL_TIMEOUT_MS);
   try {
-    const response = await fetch('https://api.openai.com/v1/responses', {
+    const response = await fetch(`${modelAuth.baseUrl}/responses`, {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
+        ...modelAuth.headers,
       },
       body: JSON.stringify({
         model,
@@ -309,7 +364,7 @@ async function createResponse({ apiKey, model, content }) {
 
     const json = await response.json().catch(() => undefined);
     if (!response.ok) {
-      throw new Error(`OpenAI Responses API failed: HTTP ${response.status} ${JSON.stringify(json)}`);
+      throw new Error(`Codex Responses API failed: HTTP ${response.status} ${JSON.stringify(json)}`);
     }
     return extractOutputText(json);
   } finally {

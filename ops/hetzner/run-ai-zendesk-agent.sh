@@ -10,6 +10,8 @@ MODEL="${LEGEND_AGENT_MODEL:-${OPENAI_MODEL:-gpt-5.5}}"
 MAX_STEPS="${LEGEND_AGENT_MAX_STEPS:-8}"
 RUN_ID="${LEGEND_AGENT_RUN_ID:-$(date -u +%Y%m%dT%H%M%SZ)}"
 ENV_FILE="${LEGEND_AGENT_ENV_FILE:-${ROOT_DIR}/env/legend-ai-zendesk-agent.env}"
+CODEX_AUTH_JSON_HOST="${CODEX_AUTH_JSON_HOST:-${CODEX_HOME:-/var/lib/codex-nexus}/auth.json}"
+CODEX_AUTH_JSON_CONTAINER="/run/codex/auth.json"
 PLAYWRIGHT_IMAGE="${LEGEND_AGENT_PLAYWRIGHT_IMAGE:-mcr.microsoft.com/playwright:v1.60.0-noble}"
 SOURCE_TGZ="${LEGEND_AGENT_SOURCE_TGZ:-}"
 
@@ -23,16 +25,13 @@ ARTIFACT_TGZ="${ROOT_DIR}/runs/${RUN_ID}.tar.gz"
 main() {
   mkdir -p "${ROOT_DIR}" "${LOG_DIR}" "${RUN_DIR}" "${LATEST_DIR}" "$(dirname "${ENV_FILE}")"
 
-  if [ -n "${OPENAI_API_KEY:-}" ]; then
-    umask 077
-    {
-      printf 'OPENAI_API_KEY=%s\n' "${OPENAI_API_KEY}"
-      printf 'OPENAI_MODEL=%s\n' "${MODEL}"
-    } > "${ENV_FILE}"
-  fi
+  umask 077
+  {
+    printf 'OPENAI_MODEL=%s\n' "${MODEL}"
+  } > "${ENV_FILE}"
 
-  if [ ! -s "${ENV_FILE}" ]; then
-    echo "Missing ${ENV_FILE}; OPENAI_API_KEY must be provided through the Hetzner env file or GitHub Actions secret."
+  if [ ! -s "${CODEX_AUTH_JSON_HOST}" ]; then
+    echo "Missing Codex auth file: ${CODEX_AUTH_JSON_HOST}"
     exit 1
   fi
   chmod 600 "${ENV_FILE}"
@@ -67,9 +66,12 @@ main() {
   docker run --rm \
     --env-file "${ENV_FILE}" \
     -e "OPENAI_MODEL=${MODEL}" \
+    -e "CODEX_AUTH_JSON=${CODEX_AUTH_JSON_CONTAINER}" \
+    -e "CODEX_BACKEND_BASE_URL=${CODEX_BACKEND_BASE_URL:-https://chatgpt.com/backend-api/codex}" \
     -e "LEGEND_AGENT_BASE_URL=${BASE_URL}" \
     -e "LEGEND_AGENT_MODE=${MODE}" \
     -e "LEGEND_AGENT_MAX_STEPS=${MAX_STEPS}" \
+    -v "${CODEX_AUTH_JSON_HOST}:${CODEX_AUTH_JSON_CONTAINER}:ro" \
     -v "${REPO_DIR}:/work" \
     -v "${RUN_DIR}:/work/.legend-ai-audits" \
     -w /work \
