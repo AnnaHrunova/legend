@@ -8,6 +8,7 @@ It does not replace or modify the existing GitHub Pages prototype deployment.
 
 ```text
 Browser -> Cloudflare proxy -> Hetzner -> Caddy -> Legend frontend
+                                      -> voice API
 ```
 
 Production URL:
@@ -32,12 +33,20 @@ api.legenddesk.com: reserved for future backend
 
 ## What Gets Deployed
 
-The current Vite frontend is built into a Docker image and served by Caddy.
+The current Vite frontend and voice support services are built into Docker
+images:
+
+```text
+ghcr.io/annahrunova/legend-frontend:latest
+ghcr.io/annahrunova/legend-voice-api:latest
+ghcr.io/annahrunova/legend-voice-agent:latest
+```
 
 Caddy:
 
 - serves the static frontend from `/srv/legend`
 - handles SPA fallback through `try_files {path} /index.html`
+- proxies `/api/*` and `/healthz` to `legend-voice-api`
 - automatically issues and renews HTTPS certificates
 
 ## Files
@@ -130,6 +139,21 @@ CADDY_EMAIL        # email for Let's Encrypt notices
 VITE_POSTHOG_KEY   # existing PostHog project key
 ```
 
+Required in `/opt/legend/.env` on the Hetzner server for voice support:
+
+```text
+LIVEKIT_URL
+LIVEKIT_API_KEY
+LIVEKIT_API_SECRET
+LIVEKIT_AGENT_NAME
+OPENAI_API_KEY
+OPENAI_REALTIME_VOICE
+```
+
+The deploy workflow preserves these server-side values. It only upserts
+`HETZNER_DOMAIN` and `CADDY_EMAIL`, then validates that the voice variables are
+present without printing their values.
+
 Required for the on-demand AI Zendesk Agent workflow:
 
 ```text
@@ -153,12 +177,14 @@ Run manually:
 GitHub -> Actions -> Deploy to Hetzner -> Run workflow
 ```
 
-The deploy step writes `/opt/legend/.env` on the server:
+The deploy step upserts these values in `/opt/legend/.env` on the server:
 
 ```text
 HETZNER_DOMAIN=app.legenddesk.com
 CADDY_EMAIL=your-email@example.com
 ```
+
+It does not overwrite existing LiveKit/OpenAI voice variables.
 
 That keeps manual server checks clean:
 
@@ -171,9 +197,11 @@ The workflow also performs a public health check:
 
 ```bash
 curl -fsSI https://app.legenddesk.com
+curl -fsS https://app.legenddesk.com/healthz
 ```
 
-The deploy fails if the public site does not return a successful response.
+The deploy fails if the public site is unavailable or `/healthz` does not show
+`"livekitConfigured":true`.
 
 ## Server Operations
 
@@ -197,11 +225,20 @@ cd /opt/legend
 docker compose -f docker-compose.hetzner.yml logs -f legend-frontend
 ```
 
-Restart the frontend:
+View voice service logs:
+
+```bash
+cd /opt/legend
+docker compose -f docker-compose.hetzner.yml logs -f legend-voice-api
+docker compose -f docker-compose.hetzner.yml logs -f legend-voice-agent
+```
+
+Restart services:
 
 ```bash
 cd /opt/legend
 docker compose -f docker-compose.hetzner.yml restart legend-frontend
+docker compose -f docker-compose.hetzner.yml restart legend-voice-api legend-voice-agent
 ```
 
 Pull and restart manually, if GitHub Actions is unavailable:
@@ -216,6 +253,7 @@ Check public response from any machine:
 
 ```bash
 curl -I https://app.legenddesk.com
+curl -s https://app.legenddesk.com/healthz
 ```
 
 Expected response includes:
@@ -223,6 +261,12 @@ Expected response includes:
 ```text
 HTTP/2 200
 server: cloudflare
+```
+
+Voice health should return JSON like:
+
+```json
+{"ok":true,"livekitConfigured":true,"agentName":"legend-voice-agent"}
 ```
 
 ## AI Zendesk Agent Operations

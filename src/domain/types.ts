@@ -110,6 +110,67 @@ export interface TicketActivity {
   createdAt: string;
 }
 
+export type VoiceSessionStatus =
+  | 'connecting'
+  | 'ai_active'
+  | 'human_handoff_requested'
+  | 'human_active'
+  | 'resolved'
+  | 'abandoned'
+  | 'failed';
+
+export type VoiceCallStatus =
+  | 'connecting'
+  | 'live'
+  | 'ending'
+  | 'ended'
+  | 'failed';
+
+export interface VoiceAppContext {
+  userId: string;
+  fullName: string;
+  email: string;
+  platform: ReviewPlatform;
+  appVersion: string;
+  locale: string;
+  currentScreen: string;
+  lastAction: string;
+  recentErrors: string[];
+  entityContext?: Record<string, string>;
+}
+
+export interface VoiceTranscriptTurn {
+  id: string;
+  speaker: 'user' | 'ai' | 'agent' | 'system';
+  text: string;
+  createdAt: string;
+  isFinal: boolean;
+}
+
+export interface VoiceSession {
+  id: string;
+  roomName: string;
+  status: VoiceSessionStatus;
+  callStatus?: VoiceCallStatus;
+  startedAt: string;
+  endedAt?: string;
+  roomClosedAt?: string;
+  livekitUrl?: string;
+  supportToken?: string;
+  customerToken?: string;
+  agentDispatchId?: string;
+  mode: 'livekit' | 'mock';
+  appContext: VoiceAppContext;
+  detectedIntent?: string;
+  handoffReason?: string;
+  summary?: string;
+  outcome?: 'ai_resolved' | 'human_handoff' | 'abandoned' | 'failed';
+  transcript: VoiceTranscriptTurn[];
+  setupWarnings?: string[];
+  lastError?: string;
+  participantCount?: number;
+}
+
 export interface Ticket {
   id: string;
   subject: string;
@@ -137,6 +198,7 @@ export interface Ticket {
   relatedTicketIds?: string[];
   mergedTicketIds?: string[];
   knownIssueIds?: string[];
+  voiceSession?: VoiceSession;
   sla: {
     state: SlaState;
     firstResponseDueAt: string;

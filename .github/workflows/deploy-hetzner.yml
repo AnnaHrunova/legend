@@ -11,6 +11,7 @@ on:
         options:
           - deploy_frontend
           - run_ai_zendesk_agent
+          - voice_debug
       agent_branch:
         description: 'Repo branch containing the AI Zendesk agent runner'
         required: false
@@ -41,7 +42,9 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  IMAGE_NAME: ghcr.io/annahrunova/legend-frontend
+  FRONTEND_IMAGE_NAME: ghcr.io/annahrunova/legend-frontend
+  VOICE_API_IMAGE_NAME: ghcr.io/annahrunova/legend-voice-api
+  VOICE_AGENT_IMAGE_NAME: ghcr.io/annahrunova/legend-voice-agent
 
 jobs:
   build-and-push:
@@ -66,12 +69,35 @@ jobs:
         with:
           context: .
           file: Dockerfile.frontend
+          target: production
           push: true
           tags: |
-            ${{ env.IMAGE_NAME }}:latest
-            ${{ env.IMAGE_NAME }}:${{ github.sha }}
+            ${{ env.FRONTEND_IMAGE_NAME }}:latest
+            ${{ env.FRONTEND_IMAGE_NAME }}:${{ github.sha }}
           build-args: |
             VITE_POSTHOG_KEY=${{ secrets.VITE_POSTHOG_KEY }}
+
+      - name: Build and push voice API image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.frontend
+          target: voice-api
+          push: true
+          tags: |
+            ${{ env.VOICE_API_IMAGE_NAME }}:latest
+            ${{ env.VOICE_API_IMAGE_NAME }}:${{ github.sha }}
+
+      - name: Build and push voice agent image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.frontend
+          target: voice-agent
+          push: true
+          tags: |
+            ${{ env.VOICE_AGENT_IMAGE_NAME }}:latest
+            ${{ env.VOICE_AGENT_IMAGE_NAME }}:${{ github.sha }}
 
   deploy:
     if: ${{ inputs.operation == 'deploy_frontend' || inputs.operation == '' }}
@@ -140,13 +166,57 @@ jobs:
             -o IdentitiesOnly=yes \
             -o StrictHostKeyChecking=accept-new \
             "${HETZNER_USER}@${HETZNER_HOST}" \
-            "HETZNER_DOMAIN='${HETZNER_DOMAIN_CLEAN}' CADDY_EMAIL='${CADDY_EMAIL}' GHCR_USERNAME='${GHCR_USERNAME}' GHCR_TOKEN='${GHCR_TOKEN}' bash -s" <<'REMOTE_SCRIPT'
+            "HETZNER_DOMAIN='${HETZNER_DOMAIN_CLEAN}' CADDY_EMAIL='${CADDY_EMAIL}' CADDY_BASIC_AUTH_USER='${CADDY_BASIC_AUTH_USER}' CADDY_BASIC_AUTH_HASH='${CADDY_BASIC_AUTH_HASH}' GHCR_USERNAME='${GHCR_USERNAME}' GHCR_TOKEN='${GHCR_TOKEN}' bash -s" <<'REMOTE_SCRIPT'
           set -euo pipefail
           cd /opt/legend
-          printf 'HETZNER_DOMAIN=%s\nCADDY_EMAIL=%s\n' "$HETZNER_DOMAIN" "$CADDY_EMAIL" > .env
+
+          touch .env
+          chmod 600 .env
+
+          upsert_env() {
+            key="$1"
+            value="$2"
+            tmp_file="$(mktemp)"
+            if grep -q "^${key}=" .env; then
+              sed "s#^${key}=.*#${key}=${value}#" .env > "$tmp_file"
+            else
+              cat .env > "$tmp_file"
+              printf '%s=%s\n' "$key" "$value" >> "$tmp_file"
+            fi
+            cat "$tmp_file" > .env
+            rm -f "$tmp_file"
+          }
+
+          require_env_name() {
+            key="$1"
+            if ! grep -q "^${key}=" .env; then
+              echo "Missing required /opt/legend/.env variable: ${key}"
+              exit 1
+            fi
+          }
+
+          upsert_env HETZNER_DOMAIN "$HETZNER_DOMAIN"
+          upsert_env CADDY_EMAIL "$CADDY_EMAIL"
+          upsert_env CADDY_BASIC_AUTH_USER "$CADDY_BASIC_AUTH_USER"
+          upsert_env CADDY_BASIC_AUTH_HASH "$CADDY_BASIC_AUTH_HASH"
+          if ! grep -q "^POSTGRES_PASSWORD=" .env; then
+            upsert_env POSTGRES_PASSWORD "$(openssl rand -hex 24)"
+          fi
+
+          require_env_name CADDY_BASIC_AUTH_USER
+          require_env_name CADDY_BASIC_AUTH_HASH
+          require_env_name LIVEKIT_URL
+          require_env_name LIVEKIT_API_KEY
+          require_env_name LIVEKIT_API_SECRET
+          require_env_name LIVEKIT_AGENT_NAME
+          require_env_name OPENAI_API_KEY
+          require_env_name OPENAI_REALTIME_VOICE
+
           echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
+          docker compose -f docker-compose.hetzner.yml config >/dev/null
           docker compose -f docker-compose.hetzner.yml pull
           docker compose -f docker-compose.hetzner.yml up -d
+          docker compose -f docker-compose.hetzner.yml ps
           docker image prune -f
           REMOTE_SCRIPT
         env:
@@ -155,6 +225,8 @@ jobs:
           HETZNER_PORT: ${{ secrets.HETZNER_PORT || 22 }}
           HETZNER_DOMAIN: ${{ secrets.HETZNER_DOMAIN }}
           CADDY_EMAIL: ${{ secrets.CADDY_EMAIL }}
+          CADDY_BASIC_AUTH_USER: ${{ secrets.CADDY_BASIC_AUTH_USER }}
+          CADDY_BASIC_AUTH_HASH: ${{ secrets.CADDY_BASIC_AUTH_HASH }}
           GHCR_USERNAME: ${{ github.actor }}
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -172,19 +244,27 @@ jobs:
           fi
 
           SITE_URL="https://${DOMAIN}"
+          HEALTH_URL="${SITE_URL}/healthz"
           for attempt in 1 2 3 4 5; do
-            if curl -fsSI "${SITE_URL}" >/dev/null; then
-              curl -fsSI "${SITE_URL}" | sed -n '1,12p'
+            unauth_status="$(curl -sS -o /dev/null -w "%{http_code}" "${SITE_URL}")"
+            if [ "${unauth_status}" = "401" ] \
+              && curl -fsSI -u "${CADDY_BASIC_AUTH_USER}:${CADDY_BASIC_AUTH_PASSWORD}" "${SITE_URL}" >/dev/null \
+              && curl -fsS -u "${CADDY_BASIC_AUTH_USER}:${CADDY_BASIC_AUTH_PASSWORD}" "${HEALTH_URL}" | grep -q '"livekitConfigured":true'; then
+              curl -fsSI -u "${CADDY_BASIC_AUTH_USER}:${CADDY_BASIC_AUTH_PASSWORD}" "${SITE_URL}" | sed -n '1,12p'
+              curl -fsS -u "${CADDY_BASIC_AUTH_USER}:${CADDY_BASIC_AUTH_PASSWORD}" "${HEALTH_URL}"
               exit 0
             fi
 
-            echo "Site is not ready yet, retrying in 10 seconds (${attempt}/5)..."
+            echo "Site, auth, or voice API is not ready yet, retrying in 10 seconds (${attempt}/5)..."
             sleep 10
           done
 
-          curl -fsSI "${SITE_URL}"
+          curl -fsSI -u "${CADDY_BASIC_AUTH_USER}:${CADDY_BASIC_AUTH_PASSWORD}" "${SITE_URL}"
+          curl -fsS -u "${CADDY_BASIC_AUTH_USER}:${CADDY_BASIC_AUTH_PASSWORD}" "${HEALTH_URL}"
         env:
           HETZNER_DOMAIN: ${{ secrets.HETZNER_DOMAIN }}
+          CADDY_BASIC_AUTH_USER: ${{ secrets.CADDY_BASIC_AUTH_USER }}
+          CADDY_BASIC_AUTH_PASSWORD: ${{ secrets.CADDY_BASIC_AUTH_PASSWORD }}
 
   run-ai-zendesk-agent:
     if: ${{ inputs.operation == 'run_ai_zendesk_agent' }}
@@ -348,3 +428,68 @@ jobs:
           name: latest-ai-report
           path: ${{ runner.temp }}/legend-ai-result
           retention-days: 14
+
+  voice-debug:
+    if: ${{ inputs.operation == 'voice_debug' }}
+    runs-on: ubuntu-latest
+    env:
+      HETZNER_USER: deploy
+      HETZNER_PORT: ${{ secrets.HETZNER_PORT || 22 }}
+    steps:
+      - name: Prepare SSH key
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "${HETZNER_SSH_KEY}" > ~/.ssh/hetzner_deploy
+          chmod 600 ~/.ssh/hetzner_deploy
+          ssh-keygen -lf ~/.ssh/hetzner_deploy
+        env:
+          HETZNER_SSH_KEY: ${{ secrets.HETZNER_SSH_KEY }}
+
+      - name: Collect voice diagnostics
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/hetzner_deploy \
+            -p "${HETZNER_PORT}" \
+            -o BatchMode=yes \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=accept-new \
+            "${HETZNER_USER}@${HETZNER_HOST}" \
+            'bash -s' <<'REMOTE_SCRIPT'
+          set -euo pipefail
+          cd /opt/legend
+
+          echo "== docker compose ps =="
+          docker compose -f docker-compose.hetzner.yml ps
+
+          echo
+          echo "== voice env presence =="
+          docker exec legend-voice-agent sh -lc '
+            test -n "$LIVEKIT_URL" && echo "LIVEKIT_URL=set" || echo "LIVEKIT_URL=missing"
+            test -n "$LIVEKIT_API_KEY" && echo "LIVEKIT_API_KEY=set" || echo "LIVEKIT_API_KEY=missing"
+            test -n "$LIVEKIT_API_SECRET" && echo "LIVEKIT_API_SECRET=set" || echo "LIVEKIT_API_SECRET=missing"
+            test -n "$OPENAI_API_KEY" && echo "OPENAI_API_KEY=set" || echo "OPENAI_API_KEY=missing"
+            printf "LIVEKIT_AGENT_NAME=%s\n" "${LIVEKIT_AGENT_NAME:-}"
+            printf "OPENAI_REALTIME_VOICE=%s\n" "${OPENAI_REALTIME_VOICE:-}"
+          '
+
+          echo
+          echo "== voice-api health =="
+          docker exec legend-voice-api sh -lc \
+            'node -e "fetch(\"http://127.0.0.1:8787/healthz\").then(r=>r.text()).then(console.log)"'
+
+          echo
+          echo "== voice-api end self-test =="
+          docker exec legend-voice-api sh -lc \
+            'node -e "fetch(\"http://127.0.0.1:8787/api/voice-sessions/end\", {method:\"POST\", headers:{\"content-type\":\"application/json\"}, body:JSON.stringify({roomName:\"legend-debug-nonexistent\"})}).then(async r=>{ console.log(r.status); console.log(await r.text()) }).catch((error)=>{ console.error(error); process.exit(1) })"'
+
+          echo
+          echo "== legend-voice-api logs =="
+          docker logs legend-voice-api --tail 120
+
+          echo
+          echo "== legend-voice-agent logs =="
+          docker logs legend-voice-agent --tail 220
+          REMOTE_SCRIPT
+        env:
+          HETZNER_HOST: ${{ secrets.HETZNER_HOST }}

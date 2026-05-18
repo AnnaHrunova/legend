@@ -1,5 +1,15 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  ControlBar,
+  LiveKitRoom,
+  RoomAudioRenderer,
+  useConnectionState,
+  useParticipants,
+  useTranscriptions,
+} from '@livekit/components-react';
+import '@livekit/components-styles';
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
+import { PhoneCall, PhoneOff, UserPlus } from 'lucide-react';
 import { track } from '../analytics/analytics';
 import { getProject, getTopic } from '../analytics/topics/domain';
 import { PriorityBadge, SlaBadge, StatusBadge } from '../components/Badges';
@@ -20,13 +30,24 @@ import {
   type Team,
   type Ticket,
   type TicketStatus,
+  type VoiceCallStatus,
+  type VoiceTranscriptTurn,
 } from '../domain/types';
 import { useTickets } from '../state/ticketStore';
+import { endVoiceRoom } from '../voice/voiceSessionApi';
 
 export function TicketDetailPage() {
   const { ticketId } = useParams();
   const navigate = useNavigate();
-  const { tickets, getTicket, updateTicket, assignToCurrentUser, addInternalNote, addPublicReply } = useTickets();
+  const {
+    tickets,
+    getTicket,
+    updateTicket,
+    updateTicketSilently,
+    assignToCurrentUser,
+    addInternalNote,
+    addPublicReply,
+  } = useTickets();
   const ticket = ticketId ? getTicket(ticketId) : undefined;
   const [reply, setReply] = useState('');
   const [appliedMacro, setAppliedMacro] = useState<AppliedMacroState | undefined>();
@@ -38,6 +59,7 @@ export function TicketDetailPage() {
   const [reviewReplySent, setReviewReplySent] = useState(false);
   const [note, setNote] = useState('');
   const [newTag, setNewTag] = useState('');
+  const [voiceRoomOpen, setVoiceRoomOpen] = useState(false);
   const activeTicketId = ticket?.id;
 
   const possibleDuplicates = useMemo(
@@ -160,7 +182,13 @@ export function TicketDetailPage() {
   }
 
   function applyMacro(macro: Macro) {
-    setReply((current) => `${current}${current ? '\n\n' : ''}${macro.body}`);
+    const targetComposer = activeTicket.source === 'review' ? 'review_reply' : 'public_reply';
+    if (targetComposer === 'review_reply') {
+      setReviewReply((current) => `${current}${current ? '\n\n' : ''}${macro.body}`);
+      setReviewReplyStarted(true);
+    } else {
+      setReply((current) => `${current}${current ? '\n\n' : ''}${macro.body}`);
+    }
     setAppliedMacro({
       macroId: macro.id,
       macroName: macro.name,
@@ -172,6 +200,7 @@ export function TicketDetailPage() {
       macroId: macro.id,
       macroName: macro.name,
       category: macro.category,
+      targetComposer,
       ...(macro.suggestedStatus ? { suggestedStatus: macro.suggestedStatus } : {}),
       ...(macro.suggestedTags?.length ? { suggestedTags: macro.suggestedTags } : {}),
       ...(macro.suggestedProjectIds?.length ? { suggestedProjectIds: macro.suggestedProjectIds } : {}),
@@ -260,11 +289,20 @@ export function TicketDetailPage() {
   }
 
   function applyKnownIssueReply(issue: KnownIssue) {
-    setReply((current) => `${current}${current ? '\n\n' : ''}${issue.suggestedReply}`);
-    setKnownIssueMessage('Known issue reply applied');
+    const targetComposer = activeTicket.source === 'review' ? 'review_reply' : 'public_reply';
+    if (targetComposer === 'review_reply') {
+      setReviewReply((current) => `${current}${current ? '\n\n' : ''}${issue.suggestedReply}`);
+      setReviewReplyStarted(true);
+    } else {
+      setReply((current) => `${current}${current ? '\n\n' : ''}${issue.suggestedReply}`);
+    }
+    setKnownIssueMessage(
+      targetComposer === 'review_reply' ? 'Known issue reply added to review reply' : 'Known issue reply applied',
+    );
     track('known_issue_reply_applied', {
       ticketId: activeTicket.id,
       knownIssueId: issue.id,
+      targetComposer,
     });
   }
 
@@ -274,6 +312,176 @@ export function TicketDetailPage() {
       knownIssueId: issue.id,
       source: 'ticket_detail',
     });
+  }
+
+  function updateVoiceSession(
+    patch: NonNullable<Ticket['voiceSession']>,
+    action: string,
+    ticketPatch: Partial<Ticket> = {},
+  ) {
+    updateTicket(
+      activeTicket.id,
+      {
+        ...ticketPatch,
+        voiceSession: patch,
+      },
+      action,
+      'Legend Voice',
+    );
+  }
+
+  function requestVoiceHandoff() {
+    const voiceSession = activeTicket.voiceSession;
+    if (!voiceSession || voiceSession.status === 'human_handoff_requested') return;
+    updateVoiceSession(
+      {
+        ...voiceSession,
+        status: 'human_handoff_requested',
+        handoffReason: 'Support specialist requested from ticket detail.',
+        outcome: 'human_handoff',
+      },
+      'Requested human handoff for voice session',
+      { status: 'Escalated' },
+    );
+    track('ticket_status_changed', {
+      ticketId: activeTicket.id,
+      channel: 'voice',
+      voiceSessionId: voiceSession.id,
+      fromStatus: voiceSession.status,
+      toStatus: 'human_handoff_requested',
+      reason: 'support_requested_handoff',
+    });
+  }
+
+  function joinVoiceSession() {
+    const voiceSession = activeTicket.voiceSession;
+    if (!voiceSession) return;
+    setVoiceRoomOpen(true);
+    if (voiceSession.status !== 'human_active') {
+      updateVoiceSession(
+        {
+          ...voiceSession,
+          status: 'human_active',
+          callStatus: 'connecting',
+          lastError: undefined,
+          outcome: 'human_handoff',
+        },
+        'Support agent joined voice session',
+      );
+      track('ticket_status_changed', {
+        ticketId: activeTicket.id,
+        channel: 'voice',
+        voiceSessionId: voiceSession.id,
+        fromStatus: voiceSession.status,
+        toStatus: 'human_active',
+        reason: 'agent_joined_voice_room',
+      });
+    }
+  }
+
+  function updateVoiceCallState(
+    patch: Pick<NonNullable<Ticket['voiceSession']>, 'callStatus'> &
+      Partial<Pick<NonNullable<Ticket['voiceSession']>, 'lastError' | 'participantCount'>>,
+  ) {
+    const voiceSession = activeTicket.voiceSession;
+    if (!voiceSession) return;
+    updateTicketSilently(activeTicket.id, {
+      voiceSession: {
+        ...voiceSession,
+        ...patch,
+      },
+    });
+  }
+
+  function syncVoiceTranscript(turns: VoiceTranscriptTurn[]) {
+    const voiceSession = activeTicket.voiceSession;
+    if (!voiceSession || !turns.length) return;
+    const byId = new Map(voiceSession.transcript.map((turn) => [turn.id, turn]));
+    let changed = false;
+    turns.forEach((turn) => {
+      const current = byId.get(turn.id);
+      if (!current || current.text !== turn.text || current.isFinal !== turn.isFinal) {
+        byId.set(turn.id, turn);
+        changed = true;
+      }
+    });
+    if (!changed) return;
+    const transcript = Array.from(byId.values()).sort(
+      (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+    );
+    const latestUserTurn = [...transcript].reverse().find((turn) => turn.speaker === 'user');
+    updateTicketSilently(activeTicket.id, {
+      voiceSession: {
+        ...voiceSession,
+        transcript,
+        summary: latestUserTurn
+          ? `Live voice transcript captured. Latest customer input: ${latestUserTurn.text}`
+          : voiceSession.summary,
+      },
+    });
+  }
+
+  async function endVoiceSession(outcome: NonNullable<NonNullable<Ticket['voiceSession']>['outcome']>) {
+    const voiceSession = activeTicket.voiceSession;
+    if (!voiceSession) return;
+    const nextStatus = outcome === 'abandoned' ? 'abandoned' : 'resolved';
+    updateVoiceSession(
+      {
+        ...voiceSession,
+        status: nextStatus,
+        callStatus: voiceSession.mode === 'livekit' ? 'ending' : 'ended',
+        outcome,
+        endedAt: new Date().toISOString(),
+        summary:
+          voiceSession.summary ??
+          'Voice session ended. Review the transcript and attached app context before closing follow-up.',
+      },
+      outcome === 'abandoned' ? 'Marked voice session abandoned' : 'Resolved voice session',
+      { status: outcome === 'abandoned' ? 'Pending' : 'Solved' },
+    );
+    setVoiceRoomOpen(false);
+    track('ticket_status_changed', {
+      ticketId: activeTicket.id,
+      channel: 'voice',
+      voiceSessionId: voiceSession.id,
+      fromStatus: voiceSession.status,
+      toStatus: nextStatus,
+      resolvedBy: outcome === 'ai_resolved' ? 'ai' : 'human',
+      roomName: voiceSession.roomName,
+    });
+
+    if (voiceSession.mode === 'livekit') {
+      try {
+        await endVoiceRoom(voiceSession.roomName);
+        updateTicketSilently(activeTicket.id, {
+          voiceSession: {
+            ...voiceSession,
+            status: nextStatus,
+            callStatus: 'ended',
+            outcome,
+            endedAt: new Date().toISOString(),
+            roomClosedAt: new Date().toISOString(),
+          },
+        });
+      } catch (error) {
+        updateVoiceSession(
+          {
+            ...voiceSession,
+            status: nextStatus,
+            callStatus: 'failed',
+            outcome,
+            endedAt: new Date().toISOString(),
+            lastError: error instanceof Error ? error.message : String(error),
+            setupWarnings: [
+              ...(voiceSession.setupWarnings ?? []),
+              error instanceof Error ? error.message : String(error),
+            ],
+          },
+          'Voice room failed to close',
+          { status: outcome === 'abandoned' ? 'Pending' : 'Solved' },
+        );
+      }
+    }
   }
 
   return (
@@ -369,6 +577,20 @@ export function TicketDetailPage() {
           </section>
         )}
 
+        {ticket.voiceSession && (
+          <VoiceSessionPanel
+            ticket={ticket}
+            voiceRoomOpen={voiceRoomOpen}
+            onJoin={joinVoiceSession}
+            onCallStateChange={updateVoiceCallState}
+            onTranscriptChange={syncVoiceTranscript}
+            onRequestHandoff={requestVoiceHandoff}
+            onResolveByAi={() => endVoiceSession('ai_resolved')}
+            onResolveByHuman={() => endVoiceSession('human_handoff')}
+            onAbandon={() => endVoiceSession('abandoned')}
+          />
+        )}
+
         <section className="conversation-panel">
           <div className="section-header">
             <h2>Conversation</h2>
@@ -439,8 +661,19 @@ export function TicketDetailPage() {
                     ...(ticket.reviewSource ? { reviewSource: ticket.reviewSource } : {}),
                     textLength: text.length,
                   });
+                  if (appliedMacro) {
+                    track('macro_reply_submitted', {
+                      ticketId: activeTicket.id,
+                      macroId: appliedMacro.macroId,
+                      macroName: appliedMacro.macroName,
+                      targetComposer: 'review_reply',
+                      wasEdited: text !== appliedMacro.body,
+                      changedLengthPercent: changedLengthPercent(appliedMacro.body, text),
+                    });
+                  }
                   setReviewReply('');
                   setReviewReplySent(true);
+                  setAppliedMacro(undefined);
                 }}
               >
                 Send review reply
@@ -694,6 +927,327 @@ type DuplicateSuggestion = {
   reasons: DuplicateReason[];
 };
 
+function VoiceSessionPanel({
+  ticket,
+  voiceRoomOpen,
+  onJoin,
+  onCallStateChange,
+  onTranscriptChange,
+  onRequestHandoff,
+  onResolveByAi,
+  onResolveByHuman,
+  onAbandon,
+}: {
+  ticket: Ticket;
+  voiceRoomOpen: boolean;
+  onJoin: () => void;
+  onCallStateChange: (
+    patch: Pick<NonNullable<Ticket['voiceSession']>, 'callStatus'> &
+      Partial<Pick<NonNullable<Ticket['voiceSession']>, 'lastError' | 'participantCount'>>,
+  ) => void;
+  onTranscriptChange: (turns: VoiceTranscriptTurn[]) => void;
+  onRequestHandoff: () => void;
+  onResolveByAi: () => void;
+  onResolveByHuman: () => void;
+  onAbandon: () => void;
+}) {
+  const voiceSession = ticket.voiceSession!;
+  const context = voiceSession.appContext;
+  const canJoinLiveRoom = Boolean(voiceSession.livekitUrl && voiceSession.supportToken);
+  const customerTestUrl = useMemo(() => {
+    if (!voiceSession.livekitUrl || !voiceSession.customerToken) return undefined;
+    const params = new URLSearchParams({
+      serverUrl: voiceSession.livekitUrl,
+      token: voiceSession.customerToken,
+      roomName: voiceSession.roomName,
+      ticketId: ticket.id,
+      name: context.fullName,
+    });
+    return `/mobile-voice-test?${params.toString()}`;
+  }, [context.fullName, ticket.id, voiceSession.customerToken, voiceSession.livekitUrl, voiceSession.roomName]);
+
+  return (
+    <section className="voice-session-panel">
+      <div className="section-header">
+        <div>
+          <p className="eyebrow">In-app voice</p>
+          <h2>Voice session</h2>
+        </div>
+        <div className="voice-status-stack">
+          <span className={`voice-status voice-status-${voiceSession.status}`}>
+            {voiceStatusLabel(voiceSession.status)}
+          </span>
+          <span>{voiceSession.mode === 'livekit' ? 'LiveKit room ready' : 'Mock mode'}</span>
+        </div>
+      </div>
+
+      <div className={`voice-call-state voice-call-state-${voiceSession.callStatus ?? 'connecting'}`}>
+        <span className="voice-state-dot" aria-hidden="true" />
+        <strong>{voiceCallStatusLabel(voiceSession.callStatus ?? 'connecting')}</strong>
+        {voiceSession.participantCount !== undefined && (
+          <span>{voiceSession.participantCount} participant{voiceSession.participantCount === 1 ? '' : 's'}</span>
+        )}
+        {voiceSession.lastError && <em>{voiceSession.lastError}</em>}
+      </div>
+
+      <div className="voice-context-grid">
+        <dl>
+          <div><dt>User</dt><dd>{context.fullName}</dd></div>
+          <div><dt>Platform</dt><dd>{context.platform === 'ios' ? 'iOS' : 'Android'} · {context.appVersion}</dd></div>
+          <div><dt>Screen</dt><dd>{context.currentScreen}</dd></div>
+          <div><dt>Last action</dt><dd>{context.lastAction}</dd></div>
+        </dl>
+        <div className="voice-ai-summary">
+          <strong>{voiceSession.detectedIntent ?? 'Intent pending'}</strong>
+          <p>{voiceSession.summary ?? 'AI summary will appear after the voice session has enough context.'}</p>
+          {voiceSession.handoffReason && <em>{voiceSession.handoffReason}</em>}
+        </div>
+      </div>
+
+      {voiceSession.setupWarnings?.length ? (
+        <div className="voice-warning-list">
+          {voiceSession.setupWarnings.map((warning) => (
+            <span key={warning}>{warning}</span>
+          ))}
+        </div>
+      ) : null}
+
+      <div className="voice-action-row">
+        <button type="button" disabled={!canJoinLiveRoom} onClick={onJoin}>
+          <PhoneCall size={16} />
+          Join call
+        </button>
+        <button type="button" onClick={onRequestHandoff}>
+          <UserPlus size={16} />
+          Request handoff
+        </button>
+        <button type="button" onClick={onResolveByAi}>AI resolved</button>
+        <button type="button" onClick={onResolveByHuman}>Human resolved</button>
+        <button type="button" onClick={onAbandon}>
+          <PhoneOff size={16} />
+          Abandoned
+        </button>
+        {customerTestUrl && (
+          <Link className="voice-mobile-test-link" to={customerTestUrl} target="_blank" rel="noreferrer">
+            Open customer test
+          </Link>
+        )}
+      </div>
+
+      {voiceRoomOpen && canJoinLiveRoom && (
+        <VoiceLiveRoom
+          voiceSession={voiceSession}
+          onCallStateChange={onCallStateChange}
+          onTranscriptChange={onTranscriptChange}
+        />
+      )}
+
+      <div className="voice-transcript-list">
+        {voiceSession.transcript.map((turn) => (
+          <article key={turn.id} className={`voice-turn voice-turn-${turn.speaker}`}>
+            <span>{voiceSpeakerLabel(turn.speaker)}</span>
+            <p>{turn.text}</p>
+            <time>{formatDate(turn.createdAt)}</time>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function VoiceLiveRoom({
+  voiceSession,
+  onCallStateChange,
+  onTranscriptChange,
+}: {
+  voiceSession: NonNullable<Ticket['voiceSession']>;
+  onCallStateChange: (
+    patch: Pick<NonNullable<Ticket['voiceSession']>, 'callStatus'> &
+      Partial<Pick<NonNullable<Ticket['voiceSession']>, 'lastError' | 'participantCount'>>,
+  ) => void;
+  onTranscriptChange: (turns: VoiceTranscriptTurn[]) => void;
+}) {
+  return (
+    <LiveKitRoom
+      audio
+      connect
+      serverUrl={voiceSession.livekitUrl}
+      token={voiceSession.supportToken}
+      className="voice-livekit-room"
+      onError={(error) => {
+        onCallStateChange({
+          callStatus: 'failed',
+          lastError: error instanceof Error ? error.message : String(error),
+        });
+      }}
+      onMediaDeviceFailure={(failure, kind) => {
+        onCallStateChange({
+          callStatus: 'failed',
+          lastError: `Media device failed${kind ? ` (${kind})` : ''}: ${String(failure)}`,
+        });
+      }}
+    >
+      <RoomAudioRenderer />
+      <VoiceRoomTelemetry
+        currentCallStatus={voiceSession.callStatus ?? 'connecting'}
+        currentVoiceStatus={voiceSession.status}
+        onCallStateChange={onCallStateChange}
+        onTranscriptChange={onTranscriptChange}
+      />
+      <ControlBar controls={{ camera: false, screenShare: false, chat: false }} />
+    </LiveKitRoom>
+  );
+}
+
+function VoiceRoomTelemetry({
+  currentCallStatus,
+  currentVoiceStatus,
+  onCallStateChange,
+  onTranscriptChange,
+}: {
+  currentCallStatus: VoiceCallStatus;
+  currentVoiceStatus: NonNullable<Ticket['voiceSession']>['status'];
+  onCallStateChange: (
+    patch: Pick<NonNullable<Ticket['voiceSession']>, 'callStatus'> &
+      Partial<Pick<NonNullable<Ticket['voiceSession']>, 'lastError' | 'participantCount'>>,
+  ) => void;
+  onTranscriptChange: (turns: VoiceTranscriptTurn[]) => void;
+}) {
+  const connectionState = useConnectionState();
+  const participants = useParticipants();
+  const transcriptions = useTranscriptions();
+  const lastCallSnapshotRef = useRef('');
+  const lastTranscriptSnapshotRef = useRef('');
+  const stateName = String(connectionState).toLowerCase();
+  const transcriptTurns = useMemo(
+    () =>
+      transcriptions
+        .filter((item) => item.text.trim())
+        .map((item) => ({
+          id: `livekit-${item.participantInfo.identity}-${item.streamInfo.id}`,
+          speaker: voiceSpeakerFromIdentity(item.participantInfo.identity),
+          text: item.text.trim(),
+          createdAt: new Date().toISOString(),
+          isFinal: true,
+        })),
+    [transcriptions],
+  );
+
+  useEffect(() => {
+    const terminal = currentVoiceStatus === 'resolved' || currentVoiceStatus === 'abandoned';
+    const nextCallStatus: VoiceCallStatus =
+      currentCallStatus === 'ending' || terminal
+        ? 'ending'
+        : stateName === 'connected'
+          ? 'live'
+          : stateName === 'disconnected' && currentCallStatus === 'live'
+            ? 'failed'
+            : 'connecting';
+    const snapshot = `${nextCallStatus}:${participants.length}:${stateName}`;
+    if (lastCallSnapshotRef.current === snapshot) return;
+    lastCallSnapshotRef.current = snapshot;
+    onCallStateChange({
+      callStatus: nextCallStatus,
+      participantCount: participants.length,
+      ...(nextCallStatus === 'failed'
+        ? { lastError: 'LiveKit room disconnected before resolution.' }
+        : { lastError: undefined }),
+    });
+  }, [currentCallStatus, currentVoiceStatus, onCallStateChange, participants.length, stateName]);
+
+  useEffect(() => {
+    if (!transcriptTurns.length) return;
+    const snapshot = JSON.stringify(
+      transcriptTurns.map((turn) => ({
+        id: turn.id,
+        speaker: turn.speaker,
+        text: turn.text,
+        isFinal: turn.isFinal,
+      })),
+    );
+    if (lastTranscriptSnapshotRef.current === snapshot) return;
+    lastTranscriptSnapshotRef.current = snapshot;
+    onTranscriptChange(transcriptTurns);
+  }, [onTranscriptChange, transcriptTurns]);
+
+  if (!transcriptions.length) {
+    return (
+      <div className="voice-live-state">
+        <span className="voice-live-caption">
+          Live transcription will appear when the agent publishes text.
+        </span>
+        <span>{voiceConnectionLabel(stateName)} · {participants.length} participant{participants.length === 1 ? '' : 's'}</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="voice-live-state">
+      <span>{voiceConnectionLabel(stateName)} · {participants.length} participant{participants.length === 1 ? '' : 's'}</span>
+      <div className="voice-live-transcriptions">
+        {transcriptions.slice(-4).map((item) => (
+          <span key={`${item.participantInfo.identity}-${item.streamInfo.id}`}>
+            <strong>{voiceSpeakerLabel(voiceSpeakerFromIdentity(item.participantInfo.identity))}</strong>
+            {item.text}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function voiceSpeakerFromIdentity(identity: string): VoiceTranscriptTurn['speaker'] {
+  const normalized = identity.toLowerCase();
+  if (normalized.includes('customer')) return 'user';
+  if (normalized.includes('agent') || normalized.includes('assistant')) return 'ai';
+  if (normalized.includes('support')) return 'agent';
+  return 'system';
+}
+
+function voiceStatusLabel(status: NonNullable<Ticket['voiceSession']>['status']) {
+  const labels: Record<NonNullable<Ticket['voiceSession']>['status'], string> = {
+    connecting: 'Connecting',
+    ai_active: 'AI active',
+    human_handoff_requested: 'Handoff requested',
+    human_active: 'Human active',
+    resolved: 'Resolved',
+    abandoned: 'Abandoned',
+    failed: 'Failed',
+  };
+  return labels[status];
+}
+
+function voiceCallStatusLabel(status: VoiceCallStatus) {
+  const labels: Record<VoiceCallStatus, string> = {
+    connecting: 'Connecting',
+    live: 'Live',
+    ending: 'Ending',
+    ended: 'Ended',
+    failed: 'Failed',
+  };
+  return labels[status];
+}
+
+function voiceConnectionLabel(stateName: string) {
+  const labels: Record<string, string> = {
+    connected: 'Connected',
+    connecting: 'Connecting',
+    disconnected: 'Disconnected',
+    reconnecting: 'Reconnecting',
+  };
+  return labels[stateName] ?? stateName;
+}
+
+function voiceSpeakerLabel(speaker: NonNullable<Ticket['voiceSession']>['transcript'][number]['speaker']) {
+  const labels = {
+    user: 'Customer',
+    ai: 'AI',
+    agent: 'Agent',
+    system: 'System',
+  };
+  return labels[speaker];
+}
+
 function MacroPicker({
   ticket,
   onApply,
@@ -731,7 +1285,8 @@ function MacroPicker({
 
   function insertTemplate(macro: Macro) {
     onApply(macro);
-    setTemplateMessage(`Inserted reply template: ${macro.name}`);
+    const target = ticket.source === 'review' ? `${reviewSourceLabel(ticket.reviewSource)} review reply` : 'public reply';
+    setTemplateMessage(`Inserted ${macro.name} into ${target}`);
   }
 
   function applyMetadata(macro: Macro) {
@@ -744,7 +1299,7 @@ function MacroPicker({
       <div className="section-title-row">
         <div>
           <strong>Reply templates</strong>
-          <span>Insert a reusable reply, then edit it before sending.</span>
+          <span>{ticket.source === 'review' ? 'Templates fill the review reply composer.' : 'Insert a reusable reply, then edit it before sending.'}</span>
         </div>
         <FeedbackButton
           context="macro_picker"
@@ -1053,26 +1608,73 @@ function matchingKnownIssues(ticket: Ticket) {
 }
 
 function knownIssueMatchesTicket(issue: KnownIssue, ticket: Ticket) {
+  const match = knownIssueMatchDetail(issue, ticket);
+  return match.sourceMatches && match.platformMatches && match.symptomMatches;
+}
+
+function knownIssueMatchDetail(issue: KnownIssue, ticket: Ticket) {
   const ticketSource = ticket.source === 'support' ? 'support' : ticket.reviewSource;
   const topicMatches = issue.topicIds.includes(ticket.topicId);
   const projectMatches = ticket.projectIds.some((projectId) => issue.projectIds.includes(projectId));
   const sourceMatches = !issue.affectedSources?.length || Boolean(ticketSource && issue.affectedSources.includes(ticketSource));
   const platformMatches =
     !issue.affectedPlatforms?.length || Boolean(ticket.platform && issue.affectedPlatforms.includes(ticket.platform));
+  const symptomMatches = topicMatches || sharedKnownIssueSymptomCount(issue, ticket) >= 2;
 
-  return (topicMatches || projectMatches) && sourceMatches && platformMatches;
+  return {
+    topicMatches,
+    projectMatches,
+    sourceMatches,
+    platformMatches,
+    symptomMatches,
+    sharedSymptomCount: sharedKnownIssueSymptomCount(issue, ticket),
+  };
 }
 
 function scoreKnownIssue(issue: KnownIssue, ticket: Ticket) {
   const ticketSource = ticket.source === 'support' ? 'support' : ticket.reviewSource;
+  const match = knownIssueMatchDetail(issue, ticket);
   let score = 0;
 
-  if (issue.topicIds.includes(ticket.topicId)) score += 4;
+  if (match.topicMatches) score += 6;
+  score += match.sharedSymptomCount;
   score += ticket.projectIds.filter((projectId) => issue.projectIds.includes(projectId)).length;
   if (ticketSource && issue.affectedSources?.includes(ticketSource)) score += 2;
   if (ticket.platform && issue.affectedPlatforms?.includes(ticket.platform)) score += 2;
 
   return score;
+}
+
+function sharedKnownIssueSymptomCount(issue: KnownIssue, ticket: Ticket) {
+  const ticketTokens = meaningfulTokens(`${ticket.subject} ${ticket.description} ${ticket.tags.join(' ')}`);
+  const issueTokens = meaningfulTokens(
+    `${issue.title} ${issue.description} ${issue.suggestedReply} ${issue.topicIds.map(topicName).join(' ')}`,
+  );
+
+  return [...ticketTokens].filter((token) => issueTokens.has(token)).length;
+}
+
+function meaningfulTokens(text: string) {
+  const stopWords = new Set([
+    'after',
+    'again',
+    'some',
+    'status',
+    'still',
+    'that',
+    'this',
+    'when',
+    'while',
+    'with',
+    'your',
+  ]);
+
+  return new Set(
+    text
+      .toLowerCase()
+      .split(/[^a-z0-9]+/)
+      .filter((token) => token.length >= 4 && !stopWords.has(token)),
+  );
 }
 
 function affectedLabel(issue: KnownIssue) {

@@ -1,8 +1,10 @@
 # Legend Desk
 
-Legend Desk is a frontend-only prototype of an internal support ticketing system inspired by common helpdesk workflows.
+Legend Desk started as a frontend-only prototype of an internal support ticketing system inspired by common helpdesk workflows.
 
-We are not building Zendesk. We are using a realistic frontend prototype to validate product assumptions before committing to backend architecture.
+We are not building Zendesk. Most of the app is still a realistic frontend prototype used to validate product assumptions before committing to broad backend architecture.
+
+The current exception is the in-app voice support MVP. Voice support now has a small real backend on Hetzner because realtime voice sessions, LiveKit rooms, OpenAI Realtime usage, and mobile-originated tickets cannot be validated honestly with static mock data alone.
 
 The intended loop is:
 
@@ -31,6 +33,14 @@ No real customer data should be added to this prototype.
 - `localStorage` for lightweight prototype state
 - PostHog for analytics and future session replay
 - GitHub Pages for deployment
+- Hetzner for the live `app.legenddesk.com` environment
+- Docker Compose for the Hetzner runtime
+- Caddy for HTTPS and reverse proxying
+- Express for the voice session API
+- Postgres for mobile-originated voice tickets
+- LiveKit Cloud for realtime voice rooms
+- LiveKit Agents SDK for the voice agent worker
+- OpenAI Realtime for speech understanding and spoken AI responses
 - MSW is planned for the next mock API layer; it is not wired in yet
 
 ## Core Concept
@@ -64,6 +74,10 @@ Implemented:
 - reports dashboard
 - topics heatmap with predefined support topics, project grouping, time buckets, playback, and drill-down
 - admin settings mock
+- in-app voice support MVP with LiveKit/OpenAI Realtime
+- mobile voice test page that imitates an iOS/Android app starting a voice support session
+- voice tickets created from mobile context and stored in Postgres
+- support-side ability to join the same live voice room from the ticket detail page
 - contextual feedback buttons across major UI areas
 - analytics events through a centralized wrapper
 
@@ -73,6 +87,398 @@ Mock data:
 - 10 customers
 - 8 agents
 - 4 teams: Billing, Technical Support, Compliance, Product Support
+
+## In-App Voice Support
+
+Legend Desk includes an MVP for authenticated in-app voice support.
+
+The product idea:
+
+```text
+Mobile app user has a problem
+-> starts voice support from inside the app
+-> Legend Desk creates a contextual voice ticket
+-> AI voice agent joins the LiveKit room
+-> support can join the same live room if human help is needed
+-> user does not have to repeat account/app context
+```
+
+The point is not to make a phone-call clone. The point is to validate whether mobile app context helps support understand and resolve the problem faster.
+
+### What LiveKit Does
+
+LiveKit is the realtime media layer.
+
+In this project it is responsible for:
+
+- creating voice rooms
+- connecting the mobile customer, AI agent, and support agent to the same room
+- handling WebRTC audio transport
+- issuing participant tokens through our backend
+- exposing room/session lifecycle in the LiveKit dashboard
+
+LiveKit does not understand the user's problem by itself. It moves audio and manages realtime participants.
+
+### What OpenAI Does
+
+OpenAI Realtime is the voice intelligence layer.
+
+The AI voice agent uses OpenAI Realtime to:
+
+- listen to the customer
+- understand speech
+- respond by voice
+- use attached app context before asking generic questions
+- decide when the issue may need a human handoff
+
+OpenAI usage starts when the LiveKit agent session is active and stops when the LiveKit room is closed or the agent disconnects.
+
+### What Legend Desk Does
+
+Legend Desk owns the support workflow:
+
+- creates the ticket
+- stores mobile app context
+- shows detected intent, transcript, status, and summary
+- lets support join the same room
+- lets support mark the voice session as `AI resolved`, `Human resolved`, or `Abandoned`
+- closes the LiveKit room when the session ends
+
+Voice call UI states:
+
+- `connecting`
+- `live`
+- `ending`
+- `ended`
+- `failed`
+
+### Current Architecture
+
+```text
+Mobile voice test page
+        |
+        | POST /api/mobile-voice-sessions
+        v
+legend-voice-api on Hetzner
+        |
+        | creates ticket in Postgres
+        | creates LiveKit room
+        | creates customer/support tokens
+        | dispatches voice agent
+        v
+LiveKit Cloud room
+        |
+        +-- mobile customer participant
+        +-- AI voice agent participant
+        +-- support participant from Legend Desk, if joined
+        |
+        v
+OpenAI Realtime
+```
+
+Runtime services on Hetzner:
+
+- `legend-frontend`: Caddy + built Vite frontend
+- `legend-voice-api`: Express API for voice session lifecycle
+- `legend-voice-agent`: LiveKit Agents worker using OpenAI Realtime
+- `legend-postgres`: Postgres storage for mobile-created voice tickets
+
+LiveKit Cloud hosts the realtime voice room. The current AI agent worker is still deployed on Hetzner and registers with LiveKit from there. A cleaner future production setup may move the agent worker into LiveKit Agents Cloud.
+
+### Where The Voice Agent Is Deployed
+
+The current voice agent is:
+
+```text
+server/legend-voice-agent.mjs
+```
+
+It runs in the Hetzner Docker Compose service:
+
+```text
+legend-voice-agent
+```
+
+This service starts a LiveKit Agents worker. The worker connects to the LiveKit Cloud project using:
+
+```text
+LIVEKIT_URL
+LIVEKIT_API_KEY
+LIVEKIT_API_SECRET
+LIVEKIT_AGENT_NAME
+OPENAI_API_KEY
+OPENAI_REALTIME_VOICE
+```
+
+When `legend-voice-api` creates a room, it dispatches this registered worker into that room. The agent then joins the LiveKit room as an AI participant and uses OpenAI Realtime to understand and answer the customer by voice.
+
+So the split is:
+
+```text
+LiveKit Cloud
+  owns the room, WebRTC media, participants, and session lifecycle
+
+Hetzner legend-voice-agent
+  runs our custom agent code and connects to LiveKit as a worker
+
+OpenAI Realtime
+  performs speech understanding and spoken AI responses
+```
+
+The agent is not deployed inside LiveKit Agents Cloud yet. That was a deliberate MVP choice.
+
+Why it is on Hetzner right now:
+
+- fastest path after the frontend and voice API were already deployed there
+- one Docker Compose deploy controls frontend, voice API, Postgres, and agent together
+- easier to inspect logs through the same Hetzner deployment
+- no separate LiveKit agent project layout or CLI deploy was required to prove the product flow
+- enough for validating mobile start, AI voice response, support join, lifecycle close, and OpenAI usage stop
+
+Why LiveKit Agents Cloud may be better later:
+
+- the voice worker runs in LiveKit's managed agent runtime
+- less operational work on our server
+- fewer native WebRTC/runtime dependency issues in our Docker image
+- cleaner separation: Hetzner owns LegendDesk/product API, LiveKit owns realtime agent execution
+- likely better scaling and lifecycle management for production voice workloads
+
+The practical difference:
+
+```text
+Current MVP:
+Hetzner runs agent code -> agent connects to LiveKit Cloud room
+
+Future cleaner setup:
+LiveKit Agents Cloud runs agent code -> Hetzner only creates rooms/tokens/tickets
+```
+
+Both approaches use LiveKit rooms. The difference is where the custom AI worker process lives. Today it lives on our Hetzner server. In LiveKit Agents Cloud it would live in LiveKit's hosted agent runtime.
+
+We should move the agent to LiveKit Agents Cloud after the handoff/product lifecycle is proven, not before. Otherwise we would be mixing product validation with runtime migration work, which is a lovely way to create two problems and debug neither properly.
+
+Relevant files:
+
+```text
+server/voice-session-server.mjs      # Express voice API and Postgres persistence
+server/legend-voice-agent.mjs        # LiveKit/OpenAI Realtime voice agent
+src/pages/MobileVoiceTestPage.tsx    # temporary mobile app simulator
+src/pages/TicketDetailPage.tsx       # support-side voice panel and join/end controls
+src/voice/voiceSessionApi.ts         # frontend API client for voice endpoints
+docker-compose.hetzner.yml           # Hetzner runtime services
+Dockerfile.frontend                  # frontend, voice-api, and voice-agent image targets
+Caddyfile                            # HTTPS and /api reverse proxy
+```
+
+### Voice API Endpoints
+
+The voice API is reverse-proxied under `https://app.legenddesk.com/api`.
+
+Start a support-created voice session from an existing ticket:
+
+```text
+POST /api/voice-sessions
+```
+
+Start a mobile-originated voice session and create a ticket:
+
+```text
+POST /api/mobile-voice-sessions
+```
+
+List mobile-originated voice tickets stored in Postgres:
+
+```text
+GET /api/mobile-voice-sessions/tickets
+```
+
+End a LiveKit room:
+
+```text
+POST /api/voice-sessions/end
+```
+
+Health check:
+
+```text
+GET /healthz
+```
+
+Expected healthy response includes:
+
+```json
+{
+  "ok": true,
+  "livekitConfigured": true,
+  "databaseConfigured": true,
+  "databaseReady": true,
+  "agentName": "legend-voice-agent"
+}
+```
+
+### Mobile Test Page
+
+The temporary mobile-app simulator is:
+
+```text
+https://app.legenddesk.com/mobile-voice-test
+```
+
+It imitates the iOS/Android app.
+
+Flow:
+
+1. Open `/mobile-voice-test`.
+2. Click `Start voice support`.
+3. The page sends authenticated mobile app context to `/api/mobile-voice-sessions`.
+4. The backend creates a Postgres-backed voice ticket.
+5. The backend creates a LiveKit room and dispatches the AI agent.
+6. The page joins the room with the `customerToken`.
+7. Legend Desk syncs mobile-created voice tickets into the inbox.
+8. A support user can open the ticket and click `Join call`.
+
+The page can also join an already-created room when opened with:
+
+```text
+/mobile-voice-test?serverUrl=...&token=...&roomName=...&ticketId=...&name=...
+```
+
+That path is useful from the `Open customer test` button inside a voice ticket.
+
+### How To Test The Mobile Voice Page
+
+Use this page when you want to test the flow as if the user started support from the real iOS/Android app.
+
+1. Open:
+
+```text
+https://app.legenddesk.com/mobile-voice-test
+```
+
+2. Click:
+
+```text
+Start voice support
+```
+
+3. Allow microphone access in the browser.
+
+4. The page should show:
+
+- connection status
+- LiveKit room name
+- created ticket id
+- participant count
+- live captions when transcription is published
+
+5. Open Legend Desk in another tab:
+
+```text
+https://app.legenddesk.com/views/my-tickets
+```
+
+6. Wait up to 5 seconds. The frontend polls:
+
+```text
+GET /api/mobile-voice-sessions/tickets
+```
+
+The new mobile-created voice ticket should appear in the inbox.
+
+7. Open the ticket and use the voice panel:
+
+- `Join call`: support joins the same LiveKit room as the customer and AI agent
+- `Open customer test`: opens the same room as the mobile customer
+- `AI resolved`: closes the session as AI-handled
+- `Human resolved`: closes the session after support joined or handled the issue
+- `Abandoned`: closes the session as abandoned
+
+8. After testing, always end the session with one of the ending actions. This deletes the LiveKit room through:
+
+```text
+POST /api/voice-sessions/end
+```
+
+This matters because an active LiveKit room can keep the AI voice agent and OpenAI Realtime session alive. Да, это именно тот случай, где забытая тестовая вкладка может тихо жрать деньги, потому что, конечно, голосовой AI не питается святым духом.
+
+If the LiveKit dashboard still shows an active session, copy the room name from the ticket and close it manually:
+
+```bash
+curl -X POST https://app.legenddesk.com/api/voice-sessions/end \
+  -H 'Content-Type: application/json' \
+  -d '{"roomName":"legend-voice_..."}'
+```
+
+Expected result:
+
+```json
+{
+  "ended": true
+}
+```
+
+If the response includes `alreadyEnded: true`, the room was already gone in LiveKit and the API treated the close as successful.
+
+### Human Handoff
+
+Human handoff means support joins the same LiveKit room where the customer and AI agent already are.
+
+Current behavior:
+
+- the customer starts from the mobile test page
+- AI joins first and starts the contextual voice interaction
+- the ticket appears in Legend Desk with app context, status, summary, and transcript area
+- support can click `Join call`
+- support joins the same room as another participant
+- support can end the session as `Human resolved`
+
+Why this matters:
+
+- support sees authenticated user context immediately
+- support sees current screen, last action, app version, and recent errors
+- the user should not need to repeat what app state they were in
+- the handoff is a continuation of the same voice session, not a new call
+
+Current limitation: AI-initiated handoff is not fully automated yet. A support user can request or complete handoff from the UI, but the next product step is for the voice agent to trigger a handoff state itself when confidence is low or the user asks for a person.
+
+### Transcript And Summary
+
+The current MVP captures LiveKit transcription events in the frontend while a support user is in the room and syncs them into the ticket's `voiceSession.transcript`.
+
+This is enough to validate the ticket UI and handoff experience, but it is not the final production transcript architecture.
+
+Future production options:
+
+- LiveKit transcription webhooks
+- agent callbacks from `legend-voice-agent`
+- backend collector service
+- direct transcript persistence into Postgres
+
+### Ending Sessions
+
+Voice sessions must be ended explicitly to stop LiveKit/OpenAI usage.
+
+Use one of the ticket actions:
+
+- `AI resolved`
+- `Human resolved`
+- `Abandoned`
+
+All three call:
+
+```text
+POST /api/voice-sessions/end
+```
+
+That endpoint deletes the LiveKit room. If the room is already gone, the API treats it as a successful idempotent close and returns `alreadyEnded: true`.
+
+If a session appears stuck in the LiveKit dashboard, use the room name from the ticket and call:
+
+```bash
+curl -X POST https://app.legenddesk.com/api/voice-sessions/end \
+  -H 'Content-Type: application/json' \
+  -d '{"roomName":"legend-voice_..."}'
+```
 
 ## Topics Heatmap
 
@@ -303,7 +709,7 @@ Bagutka relays the fix turn progress through explicit milestones:
 
 Macros are reusable reply templates for common support situations such as eSIM setup, refunds, payment failures, missing documents, notifications, login reset, known issue acknowledgement, and ticket closure.
 
-Agents can search macros, insert a macro into the public reply draft, edit the text before sending, and optionally apply suggested metadata such as tags, status, or project ownership.
+Agents can search macros, insert a macro into the relevant reply draft, edit the text before sending, and optionally apply suggested metadata such as tags, status, or project ownership. On App Store or Google Play review tickets, macro insertion fills the review reply composer so the review-specific send action becomes available.
 
 Macro instrumentation helps answer:
 
@@ -344,9 +750,9 @@ Future versions may replace this deterministic logic with embeddings or similari
 
 ### Known Issues
 
-Known issues connect repeated tickets and reviews to active product or operational problems. A matching known issue appears on the ticket detail side panel when the ticket topic, project, platform, or source matches a predefined issue.
+Known issues connect repeated tickets and reviews to active product or operational problems. A matching known issue appears on the ticket detail side panel only when source/platform constraints match and the reported symptom aligns with the known issue topic or issue text. A broad shared project such as Payments is not enough to surface an actionable known issue reply.
 
-Agents can link a ticket to a known issue, apply a suggested known-issue reply into the public reply draft, and open a compact details modal with affected projects, topics, linked tickets, and representative items.
+Agents can link a ticket to a known issue, apply a suggested known-issue reply into the relevant reply draft, and open a compact details modal with affected projects, topics, linked tickets, and representative items. On App Store or Google Play review tickets, known-issue replies fill the review reply composer rather than the generic public reply composer.
 
 Key events:
 
@@ -359,12 +765,15 @@ This is not incident management. There is no ownership workflow, incident timeli
 
 ### Prototype Limitations
 
-- no backend
+- no broad production backend for the whole ticketing product
+- the voice MVP is the only current backend-backed path
 - no real duplicate merging
 - no real incident management
 - no real ML duplicate detection yet
 - known issues and macros are local mock data
 - relationship state is mocked and stored locally with tickets
+- mobile-originated voice tickets are stored in Postgres, but most non-voice ticket changes are still local prototype state
+- if a support user changes a mobile-originated ticket in the UI, those changes currently stay in frontend state and are not written back to Postgres
 
 ## Event Model
 
@@ -671,14 +1080,31 @@ Common scripts:
 
 ```bash
 npm run dev      # start Vite
+npm run voice:api    # start the local voice API
+npm run voice:agent  # start the local LiveKit/OpenAI voice agent
 npm run build    # type-check and build
 npm run preview  # preview production build
 npm run lint     # run ESLint
 ```
 
-## Deployment
+For local voice testing, run the Vite app and voice API in separate terminals:
 
-Deployment is handled by GitHub Pages via GitHub Actions:
+```bash
+npm run dev
+npm run voice:api
+```
+
+The local voice API reads `.env.local` and `.env`. Without `LIVEKIT_URL`, `LIVEKIT_API_KEY`, and `LIVEKIT_API_SECRET`, it returns mock voice metadata. With LiveKit/OpenAI credentials present, it creates real LiveKit rooms and dispatches the agent.
+
+To run the voice agent locally as well:
+
+```bash
+npm run voice:agent
+```
+
+## GitHub Pages Deployment
+
+The static prototype can still be deployed to GitHub Pages via GitHub Actions:
 
 ```text
 .github/workflows/deploy.yml
@@ -719,14 +1145,20 @@ https://eu.i.posthog.com
 
 ## Hetzner Deployment
 
-Hetzner deployment is a separate manual path for `app.legenddesk.com`.
+Hetzner is the main live environment for `app.legenddesk.com` and for the voice MVP.
 
-It does not replace the existing GitHub Pages prototype deployment.
+It does not remove the GitHub Pages path, but voice support requires Hetzner because it needs an API, Postgres, LiveKit credentials, and an always-on agent worker.
 
 Current live path:
 
 ```text
 Browser -> Cloudflare proxy -> Hetzner -> Caddy -> Legend frontend
+```
+
+Voice API path:
+
+```text
+Browser/mobile test page -> Cloudflare proxy -> Hetzner -> Caddy -> legend-voice-api
 ```
 
 Production frontend:
@@ -754,12 +1186,17 @@ docs/HETZNER_DEPLOYMENT.md
 
 How it works:
 
-1. GitHub Actions builds the Vite frontend into a Docker image.
-2. The image is pushed to GitHub Container Registry.
+1. GitHub Actions builds three Docker images:
+   - `ghcr.io/annahrunova/legend-frontend`
+   - `ghcr.io/annahrunova/legend-voice-api`
+   - `ghcr.io/annahrunova/legend-voice-agent`
+2. The images are pushed to GitHub Container Registry.
 3. The workflow SSHes into the Hetzner server.
-4. Docker Compose pulls and runs the frontend container.
-5. Caddy serves the app and manages HTTPS automatically.
-6. The workflow checks `https://app.legenddesk.com` after deployment.
+4. Docker Compose pulls and runs frontend, voice API, voice agent, and Postgres.
+5. Caddy serves the app, manages HTTPS automatically, and proxies `/api/*` and `/healthz` to `legend-voice-api`.
+6. `legend-voice-api` runs its small Postgres migration on startup.
+7. `legend-voice-agent` registers with LiveKit and waits for dispatch jobs.
+8. The workflow checks `https://app.legenddesk.com` after deployment.
 
 The workflow is manual-only:
 
@@ -773,13 +1210,29 @@ Initial target domain:
 app.legenddesk.com
 ```
 
-Future backend domain:
+The API currently lives under the app domain:
 
 ```text
-api.legenddesk.com
+https://app.legenddesk.com/api
 ```
 
-`api.legenddesk.com` is reserved but not active yet.
+`api.legenddesk.com` is still reserved for a future split, but it is not needed for the current MVP.
+
+Required runtime environment on Hetzner:
+
+```text
+HETZNER_DOMAIN
+CADDY_EMAIL
+LIVEKIT_URL
+LIVEKIT_API_KEY
+LIVEKIT_API_SECRET
+LIVEKIT_AGENT_NAME
+OPENAI_API_KEY
+OPENAI_REALTIME_VOICE
+POSTGRES_PASSWORD
+```
+
+The deploy workflow preserves existing `/opt/legend/.env` values. It creates `POSTGRES_PASSWORD` automatically if missing. Do not print secrets in logs.
 
 Server setup, DNS, and required GitHub secrets are documented in:
 
@@ -805,6 +1258,14 @@ This loop should repeat until the core support workflow is clear.
 ## Backend Philosophy
 
 The backend should be built after validation, not before.
+
+The voice MVP is the deliberate exception. It has a narrow backend because the product question depends on real realtime behavior:
+
+- can a mobile user start support from inside the app?
+- does authenticated app context reduce repeated explanation?
+- can AI handle the first part of the conversation?
+- can a human support agent join the same room without restarting the interaction?
+- do voice sessions close cleanly so LiveKit/OpenAI usage stops?
 
 Backend design should be driven by:
 
