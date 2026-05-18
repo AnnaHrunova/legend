@@ -18,8 +18,8 @@ import { track } from '../analytics/analytics';
 import { TesterProfileControl } from './tester/TesterProfileControl';
 import { getTesterProfile, type TesterProfile } from '../analytics/testerProfile';
 import { demoVoiceAppContext } from '../data/mockVoiceSupport';
-import { currentUser } from '../data/mockUsers';
 import { applyTicketView } from '../domain/ticketViews';
+import { useActiveAgent } from '../state/activeAgent';
 import { useTickets } from '../state/ticketStore';
 import { useTicketViews } from '../state/viewStore';
 import { listMobileVoiceTickets, startVoiceSession } from '../voice/voiceSessionApi';
@@ -37,10 +37,11 @@ export function AppLayout() {
   const { tickets, createVoiceTicket, updateTicket, upsertTicketsSilently } = useTickets();
   const { systemViews, customViews } = useTicketViews();
   const [voiceStarting, setVoiceStarting] = useState(false);
+  const activeAgent = useActiveAgent();
 
   function viewCount(viewId: string) {
     const view = [...systemViews, ...customViews].find((item) => item.id === viewId);
-    return view ? applyTicketView(tickets, view, currentUser.id).length : 0;
+    return view ? applyTicketView(tickets, view, activeAgent.id).length : 0;
   }
 
   useEffect(() => {

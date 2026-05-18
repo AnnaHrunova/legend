@@ -1,4 +1,4 @@
-import type { TicketColumnKey, TicketView } from '../domain/types';
+import type { TicketColumnKey, TicketStatus, TicketView } from '../domain/types';
 
 export const defaultTicketColumns: TicketColumnKey[] = [
   'id',
@@ -27,6 +27,8 @@ const focusedColumns: TicketColumnKey[] = [
   'sla',
 ];
 
+const activeQueueStatuses: TicketStatus[] = ['New', 'Open', 'Pending', 'Waiting on customer', 'Escalated'];
+
 export const systemTicketViews: TicketView[] = [
   {
     id: 'my-tickets',
@@ -51,10 +53,10 @@ export const systemTicketViews: TicketView[] = [
   {
     id: 'urgent',
     name: 'Urgent',
-    description: 'Urgent tickets across every support team.',
+    description: 'Active urgent tickets across every support team.',
     type: 'system',
     color: '#b42318',
-    filters: { priorities: ['Urgent'] },
+    filters: { priorities: ['Urgent'], statuses: activeQueueStatuses },
     sort: 'sla',
     visibleColumns: focusedColumns,
   },
@@ -81,10 +83,10 @@ export const systemTicketViews: TicketView[] = [
   {
     id: 'sla-at-risk',
     name: 'SLA at risk',
-    description: 'Tickets that are close to or past SLA targets.',
+    description: 'Active tickets that are close to or past SLA targets.',
     type: 'system',
     color: '#dc2626',
-    filters: { slaStates: ['At risk', 'Breached'] },
+    filters: { statuses: activeQueueStatuses, slaStates: ['At risk', 'Breached'] },
     sort: 'sla',
     visibleColumns: focusedColumns,
   },

@@ -8,10 +8,11 @@ import {
   useState,
 } from 'react';
 import { mockTickets } from '../data/mockTickets';
-import { agents, currentUser } from '../data/mockUsers';
+import { agents } from '../data/mockUsers';
 import { customers } from '../data/mockCustomers';
 import { topics } from '../analytics/topics/domain';
 import { initialVoiceTranscript } from '../data/mockVoiceSupport';
+import { getActiveAgent } from './activeAgent';
 import type {
   Priority,
   Ticket,
@@ -119,7 +120,7 @@ export function TicketProvider({ children }: { children: ReactNode }) {
   }, [tickets]);
 
   const updateTicket = useCallback(
-    (id: string, patch: Partial<Ticket>, action: string, actorName = currentUser.name) => {
+    (id: string, patch: Partial<Ticket>, action: string, actorName = getActiveAgent().name) => {
       setTickets((current) =>
         current.map((ticket) =>
           ticket.id === id
@@ -166,15 +167,16 @@ export function TicketProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const assignToCurrentUser = useCallback((ids: string[]) => {
+    const activeAgent = getActiveAgent();
     setTickets((current) =>
       current.map((ticket) =>
         ids.includes(ticket.id)
           ? {
               ...ticket,
-              assigneeId: currentUser.id,
-              assigneeName: currentUser.name,
+              assigneeId: activeAgent.id,
+              assigneeName: activeAgent.name,
               updatedAt: nowIso(),
-              activity: [activity(currentUser.name, 'Assigned to current user'), ...ticket.activity],
+              activity: [activity(activeAgent.name, 'Assigned to current user'), ...ticket.activity],
             }
           : ticket,
       ),
@@ -182,6 +184,7 @@ export function TicketProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const bulkUpdateStatus = useCallback((ids: string[], status: TicketStatus) => {
+    const activeAgent = getActiveAgent();
     setTickets((current) =>
       current.map((ticket) =>
         ids.includes(ticket.id)
@@ -189,7 +192,7 @@ export function TicketProvider({ children }: { children: ReactNode }) {
               ...ticket,
               status,
               updatedAt: nowIso(),
-              activity: [activity(currentUser.name, `Changed status to ${status}`), ...ticket.activity],
+              activity: [activity(activeAgent.name, `Changed status to ${status}`), ...ticket.activity],
             }
           : ticket,
       ),
@@ -197,6 +200,7 @@ export function TicketProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const bulkUpdatePriority = useCallback((ids: string[], priority: Priority) => {
+    const activeAgent = getActiveAgent();
     setTickets((current) =>
       current.map((ticket) =>
         ids.includes(ticket.id)
@@ -205,7 +209,7 @@ export function TicketProvider({ children }: { children: ReactNode }) {
               priority,
               updatedAt: nowIso(),
               activity: [
-                activity(currentUser.name, `Changed priority to ${priority}`),
+                activity(activeAgent.name, `Changed priority to ${priority}`),
                 ...ticket.activity,
               ],
             }
@@ -217,6 +221,7 @@ export function TicketProvider({ children }: { children: ReactNode }) {
   const bulkAddTag = useCallback((ids: string[], tag: string) => {
     const normalized = tag.trim().toLowerCase();
     if (!normalized) return;
+    const activeAgent = getActiveAgent();
 
     setTickets((current) =>
       current.map((ticket) =>
@@ -225,7 +230,7 @@ export function TicketProvider({ children }: { children: ReactNode }) {
               ...ticket,
               tags: ticket.tags.includes(normalized) ? ticket.tags : [...ticket.tags, normalized],
               updatedAt: nowIso(),
-              activity: [activity(currentUser.name, `Added tag ${normalized}`), ...ticket.activity],
+              activity: [activity(activeAgent.name, `Added tag ${normalized}`), ...ticket.activity],
             }
           : ticket,
       ),
@@ -233,6 +238,7 @@ export function TicketProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const addInternalNote = useCallback((id: string, body: string) => {
+    const activeAgent = getActiveAgent();
     setTickets((current) =>
       current.map((ticket) =>
         ticket.id === id
@@ -244,13 +250,13 @@ export function TicketProvider({ children }: { children: ReactNode }) {
                 {
                   id: crypto.randomUUID(),
                   kind: 'internal',
-                  authorName: currentUser.name,
+                  authorName: activeAgent.name,
                   authorRole: 'Agent',
                   body,
                   createdAt: nowIso(),
                 },
               ],
-              activity: [activity(currentUser.name, 'Added internal note'), ...ticket.activity],
+              activity: [activity(activeAgent.name, 'Added internal note'), ...ticket.activity],
             }
           : ticket,
       ),
@@ -258,6 +264,7 @@ export function TicketProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const addPublicReply = useCallback((id: string, body: string) => {
+    const activeAgent = getActiveAgent();
     setTickets((current) =>
       current.map((ticket) =>
         ticket.id === id
@@ -269,13 +276,13 @@ export function TicketProvider({ children }: { children: ReactNode }) {
                 {
                   id: crypto.randomUUID(),
                   kind: 'agent',
-                  authorName: currentUser.name,
+                  authorName: activeAgent.name,
                   authorRole: 'Agent',
                   body,
                   createdAt: nowIso(),
                 },
               ],
-              activity: [activity(currentUser.name, 'Added public reply'), ...ticket.activity],
+              activity: [activity(activeAgent.name, 'Added public reply'), ...ticket.activity],
             }
           : ticket,
       ),
@@ -283,6 +290,7 @@ export function TicketProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const createTicket = useCallback((draft: TicketDraft) => {
+    const activeAgent = getActiveAgent();
     const customer =
       customers.find((item) => item.id === draft.customerId) ??
       customers.find((item) => item.company === draft.company) ??
@@ -333,7 +341,7 @@ export function TicketProvider({ children }: { children: ReactNode }) {
       ],
       activity: [
         activity(
-          currentUser.name,
+          activeAgent.name,
           `Created ticket for ${teamAgents.length ? draft.team : 'support queue'}`,
         ),
       ],

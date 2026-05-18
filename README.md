@@ -630,6 +630,15 @@ Required fields:
 
 Anonymous mode is intentionally not supported. Tester identity is still local-only and is not authentication.
 
+During prototype validation, the tester profile also acts as the active support agent for local workflow behavior:
+
+- `Assignee: Current user` filters use the tester profile when one exists
+- `Assign to me` assigns tickets to the same visible tester identity
+- assignee selectors include the active tester agent
+- if the tester does not match one of the mock agents, the app creates a local synthetic agent identity from the profile for filtering and assignment
+
+This does not add authentication, authorization, passwords, sessions, or backend identity. It only keeps the visible validation persona and local mock workflow behavior consistent.
+
 Profile storage:
 
 - stored locally in `localStorage`
@@ -658,6 +667,18 @@ The analytics wrapper enriches every `track()` event with tester context when a 
 - `testerRole`
 
 Feedback uses the same `track()` path, so `feedback_submitted` events receive tester context automatically.
+
+## Ticket View Semantics
+
+System ticket views are prototype queues, not backend queries. Their filters should still match what a support lead sees on screen.
+
+Operational queues exclude completed tickets unless their purpose is explicitly historical:
+
+- `Urgent` shows active urgent tickets only
+- `SLA at risk` shows active tickets that are close to or past SLA targets
+- `Solved this week` is the historical solved/closed view for the last seven days
+
+The Reports `Solved this week` KPI uses the same filter as the `Solved this week` system view so the sidebar count and dashboard metric stay aligned during validation.
 
 ## Support Workflow Features
 
