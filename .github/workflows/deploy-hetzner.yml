@@ -483,6 +483,11 @@ jobs:
             'node -e "fetch(\"http://127.0.0.1:8787/healthz\").then(r=>r.text()).then(console.log)"'
 
           echo
+          echo "== status-change assist self-test =="
+          docker exec legend-voice-api sh -lc \
+            'node -e "fetch(\"http://127.0.0.1:8787/api/status-change-assist\", {method:\"POST\", headers:{\"content-type\":\"application/json\"}, body:JSON.stringify({status:\"Pending\", ticket:{id:\"DEBUG-STATUS\", subject:\"Card payment failed on iOS\", description:\"Customer says card payment failed in app version 5.8.1 on iOS.\", priority:\"High\", status:\"Open\", team:\"Billing\", tags:[\"payment\",\"ios\"], platform:\"iOS\", appVersion:\"5.8.1\", messages:[{kind:\"customer\", authorRole:\"customer\", body:\"Card payment failed on iOS app version 5.8.1.\"}]}, requirement:{status:\"Pending\", title:\"Pending details\", fields:[{id:\"waiting_on\", label:\"Waiting on\", kind:\"select\", required:true, options:[\"Customer\",\"Internal team\",\"Product/engineering\",\"Vendor/provider\"]},{id:\"pending_reason\", label:\"Pending reason\", kind:\"select\", required:true, options:[\"Need customer confirmation\",\"Need internal check\",\"Need provider response\",\"Need transaction state\",\"Need product review\"]},{id:\"follow_up_date\", label:\"Follow-up date\", kind:\"date\", required:true}]}, duplicateCount:0})}).then(async r=>{ console.log(r.status); console.log(await r.text()) }).catch((error)=>{ console.error(error); process.exit(1) })"'
+
+          echo
           echo "== voice-api end self-test =="
           docker exec legend-voice-api sh -lc \
             'node -e "fetch(\"http://127.0.0.1:8787/api/voice-sessions/end\", {method:\"POST\", headers:{\"content-type\":\"application/json\"}, body:JSON.stringify({roomName:\"legend-debug-nonexistent\"})}).then(async r=>{ console.log(r.status); console.log(await r.text()) }).catch((error)=>{ console.error(error); process.exit(1) })"'

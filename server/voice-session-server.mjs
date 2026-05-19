@@ -159,6 +159,7 @@ app.post('/api/status-change-assist', async (request, response) => {
     const assisted = await assistStatusChange(request.body ?? {});
     response.json(assisted);
   } catch (error) {
+    console.error('[status-change-assist] failed', error);
     response.status(502).send(`Unable to run status change assist: ${errorMessage(error)}`);
   }
 });
