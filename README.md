@@ -694,7 +694,7 @@ Status changes can require fixed fields for operational quality. When a required
 POST /api/status-change-assist
 ```
 
-`legend-status-change-assist-agent` runs in `legend-voice-api` and uses Codex/ChatGPT authorization from `CODEX_AUTH_JSON`; it does not use `OPENAI_API_KEY`. The agent may only return values from the provided field options and known backend signal IDs. If Codex auth is unavailable, the drawer remains manual.
+`legend-status-change-assist-agent` runs in `legend-voice-api` and uses Codex/ChatGPT authorization from `CODEX_AUTH_JSON`; it does not use `OPENAI_API_KEY`. The agent refreshes expired Codex access tokens with the refresh token stored in `auth.json`. It may only return values from the provided field options and known backend signal IDs. If Codex auth is unavailable, the drawer remains manual.
 
 ## AI Zendesk Agent
 

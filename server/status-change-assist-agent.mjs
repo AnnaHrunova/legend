@@ -1,4 +1,4 @@
-import { resolveCodexModelAuth } from './codex-model-auth.mjs';
+import { refreshCodexModelAuth, resolveCodexModelAuth, resolveFreshCodexModelAuth } from './codex-model-auth.mjs';
 
 const AGENT_NAME = 'legend-status-change-assist-agent';
 const DEFAULT_MODEL = 'gpt-5.5';
@@ -40,13 +40,17 @@ const BACKEND_SIGNAL_CATALOG = [
 
 export async function assistStatusChange(payload) {
   const request = normalizeAssistRequest(payload);
-  const modelAuth = resolveCodexModelAuth({ agentName: AGENT_NAME });
+  let modelAuth = await resolveFreshCodexModelAuth({ agentName: AGENT_NAME });
   const model = process.env.STATUS_ASSIST_MODEL || process.env.OPENAI_MODEL || DEFAULT_MODEL;
-  const text = await createResponse({
-    modelAuth,
-    model,
-    content: renderPrompt(request),
-  });
+  const content = renderPrompt(request);
+  let text;
+  try {
+    text = await createResponse({ modelAuth, model, content });
+  } catch (error) {
+    if (!isExpiredTokenError(error)) throw error;
+    modelAuth = await refreshCodexModelAuth({ agentName: AGENT_NAME });
+    text = await createResponse({ modelAuth, model, content });
+  }
   const parsed = parseJsonResponse(text);
 
   const values = validateValues(parsed.values, request.requirement.fields);
@@ -222,7 +226,7 @@ async function createResponse({ modelAuth, model, content }) {
 
     if (!response.ok) {
       const errorBody = await response.text().catch(() => '');
-      throw new Error(`Codex Responses API failed: HTTP ${response.status} ${errorBody}`);
+      throw new CodexResponseError(response.status, errorBody);
     }
 
     const contentType = response.headers.get('content-type') ?? '';
@@ -232,6 +236,19 @@ async function createResponse({ modelAuth, model, content }) {
   } finally {
     clearTimeout(timer);
   }
+}
+
+class CodexResponseError extends Error {
+  constructor(status, body) {
+    super(`Codex Responses API failed: HTTP ${status} ${body}`);
+    this.name = 'CodexResponseError';
+    this.status = status;
+    this.body = body;
+  }
+}
+
+function isExpiredTokenError(error) {
+  return error instanceof CodexResponseError && error.status === 401 && error.body.includes('token_expired');
 }
 
 async function readStreamedOutput(response) {

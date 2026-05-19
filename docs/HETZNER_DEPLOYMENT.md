@@ -164,8 +164,9 @@ Codex auth.json on the server, default /var/lib/codex-nexus/auth.json
 The AI Zendesk Agent and the status-change assist endpoint use Codex/ChatGPT
 authorization and do not require an `OPENAI_API_KEY` GitHub secret. The
 status-change assist endpoint mounts the same auth file into `legend-voice-api`
-as `/run/codex/auth.json` and rejects API-key auth. The voice stack still uses
-`OPENAI_API_KEY` separately through `/opt/legend/.env`.
+as `/run/codex/auth.json`, refreshes expired Codex access tokens, and rejects
+API-key auth. The voice stack still uses `OPENAI_API_KEY` separately through
+`/opt/legend/.env`.
 
 The workflow deploys as the fixed server user `deploy`, so `HETZNER_USER` is not required.
 
