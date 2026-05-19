@@ -584,11 +584,11 @@ jobs:
               :
             else
               docker cp "$REMOTE_CODEX_AUTH_TMP" legend-voice-api:/tmp/codex-auth.json
-              docker exec legend-voice-api sh -lc 'install -m 600 /tmp/codex-auth.json /run/codex/auth.json && rm -f /tmp/codex-auth.json'
+              docker exec legend-voice-api sh -lc 'cat /tmp/codex-auth.json > /run/codex/auth.json && chmod 600 /run/codex/auth.json && rm -f /tmp/codex-auth.json'
             fi
           else
             docker cp "$REMOTE_CODEX_AUTH_TMP" legend-voice-api:/tmp/codex-auth.json
-            docker exec legend-voice-api sh -lc 'install -m 600 /tmp/codex-auth.json /run/codex/auth.json && rm -f /tmp/codex-auth.json'
+            docker exec legend-voice-api sh -lc 'cat /tmp/codex-auth.json > /run/codex/auth.json && chmod 600 /run/codex/auth.json && rm -f /tmp/codex-auth.json'
           fi
           rm -f "$REMOTE_CODEX_AUTH_TMP"
 
