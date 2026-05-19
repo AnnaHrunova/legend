@@ -12,6 +12,7 @@ on:
           - deploy_frontend
           - run_ai_zendesk_agent
           - voice_debug
+          - sync_codex_auth
       agent_branch:
         description: 'Repo branch containing the AI Zendesk agent runner'
         required: false
@@ -499,6 +500,98 @@ jobs:
           echo
           echo "== legend-voice-agent logs =="
           docker logs legend-voice-agent --tail 220
+          REMOTE_SCRIPT
+        env:
+          HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
+
+  sync-codex-auth:
+    if: ${{ inputs.operation == 'sync_codex_auth' }}
+    runs-on: ubuntu-latest
+    env:
+      HETZNER_USER: deploy
+      HETZNER_PORT: ${{ secrets.HETZNER_PORT || 22 }}
+    steps:
+      - name: Prepare SSH key
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "${HETZNER_SSH_KEY}" > ~/.ssh/hetzner_deploy
+          chmod 600 ~/.ssh/hetzner_deploy
+          ssh-keygen -lf ~/.ssh/hetzner_deploy
+        env:
+          HETZNER_SSH_KEY: ${{ secrets.HETZNER_SSH_KEY }}
+
+      - name: Prepare Codex auth payload
+        run: |
+          set -euo pipefail
+          test -n "${CODEX_AUTH_JSON_SYNC}"
+          umask 077
+          printf '%s' "${CODEX_AUTH_JSON_SYNC}" > "${RUNNER_TEMP}/codex-auth.json"
+          AUTH_FILE="${RUNNER_TEMP}/codex-auth.json" node -e '
+            const fs = require("node:fs");
+            const auth = JSON.parse(fs.readFileSync(process.env.AUTH_FILE, "utf8"));
+            if (auth.auth_mode === "apikey" || auth.OPENAI_API_KEY) {
+              throw new Error("Codex ChatGPT auth is required; API-key auth is not allowed.");
+            }
+            if (!auth.tokens?.access_token || !auth.tokens?.refresh_token) {
+              throw new Error("Codex auth.json must include access_token and refresh_token.");
+            }
+          '
+        env:
+          CODEX_AUTH_JSON_SYNC: ${{ secrets.CODEX_AUTH_JSON_SYNC }}
+
+      - name: Copy Codex auth to Hetzner
+        run: |
+          set -euo pipefail
+          remote_tmp="/tmp/legend-codex-auth-${GITHUB_RUN_ID}.json"
+          scp -i ~/.ssh/hetzner_deploy \
+            -P "${HETZNER_PORT}" \
+            -o BatchMode=yes \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=accept-new \
+            "${RUNNER_TEMP}/codex-auth.json" \
+            "${HETZNER_USER}@${HETZNER_HOST}:${remote_tmp}"
+
+          ssh -i ~/.ssh/hetzner_deploy \
+            -p "${HETZNER_PORT}" \
+            -o BatchMode=yes \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=accept-new \
+            "${HETZNER_USER}@${HETZNER_HOST}" \
+            "REMOTE_CODEX_AUTH_TMP='${remote_tmp}' bash -s" <<'REMOTE_SCRIPT'
+          set -euo pipefail
+          cd /opt/legend
+
+          codex_auth_json_host="$(grep '^CODEX_AUTH_JSON_HOST=' .env | tail -1 | cut -d= -f2- || true)"
+          codex_auth_json_host="${codex_auth_json_host:-/var/lib/codex-nexus/auth.json}"
+
+          node -e '
+            const fs = require("node:fs");
+            const auth = JSON.parse(fs.readFileSync(process.env.REMOTE_CODEX_AUTH_TMP, "utf8"));
+            if (auth.auth_mode === "apikey" || auth.OPENAI_API_KEY) {
+              throw new Error("Codex ChatGPT auth is required; API-key auth is not allowed.");
+            }
+            if (!auth.tokens?.access_token || !auth.tokens?.refresh_token) {
+              throw new Error("Codex auth.json must include access_token and refresh_token.");
+            }
+          '
+
+          mkdir -p "$(dirname "$codex_auth_json_host")"
+          if install -m 600 "$REMOTE_CODEX_AUTH_TMP" "$codex_auth_json_host" 2>/dev/null; then
+            :
+          elif command -v sudo >/dev/null 2>&1; then
+            sudo -n install -m 600 "$REMOTE_CODEX_AUTH_TMP" "$codex_auth_json_host"
+          else
+            echo "Could not install Codex auth file at ${codex_auth_json_host}"
+            exit 1
+          fi
+          rm -f "$REMOTE_CODEX_AUTH_TMP"
+
+          docker compose -f docker-compose.hetzner.yml restart legend-voice-api
+
+          echo "== status-change assist self-test =="
+          docker exec legend-voice-api sh -lc \
+            'node -e "fetch(\"http://127.0.0.1:8787/api/status-change-assist\", {method:\"POST\", headers:{\"content-type\":\"application/json\"}, body:JSON.stringify({status:\"Pending\", ticket:{id:\"DEBUG-STATUS\", subject:\"Card payment failed on iOS\", description:\"Customer says card payment failed in app version 5.8.1 on iOS.\", priority:\"High\", status:\"Open\", team:\"Billing\", tags:[\"payment\",\"ios\"], platform:\"iOS\", appVersion:\"5.8.1\", messages:[{kind:\"customer\", authorRole:\"customer\", body:\"Card payment failed on iOS app version 5.8.1.\"}]}, requirement:{status:\"Pending\", title:\"Pending details\", fields:[{id:\"waiting_on\", label:\"Waiting on\", kind:\"select\", required:true, options:[\"Customer\",\"Internal team\",\"Product/engineering\",\"Vendor/provider\"]},{id:\"pending_reason\", label:\"Pending reason\", kind:\"select\", required:true, options:[\"Need customer confirmation\",\"Need internal check\",\"Need provider response\",\"Need transaction state\",\"Need product review\"]},{id:\"follow_up_date\", label:\"Follow-up date\", kind:\"date\", required:true}]}, duplicateCount:0})}).then(async r=>{ console.log(r.status); const body = await r.text(); console.log(body); if (!r.ok) process.exit(1); }).catch((error)=>{ console.error(error); process.exit(1) })"'
           REMOTE_SCRIPT
         env:
           HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
