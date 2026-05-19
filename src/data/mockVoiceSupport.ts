@@ -1,4 +1,5 @@
-import type { VoiceAppContext, VoiceTranscriptTurn } from '../domain/types';
+import type { VoiceActivityContext, VoiceAppContext, VoiceTranscriptTurn } from '../domain/types';
+import { buildMockActivityContext } from './mockActivityContext';
 
 export const demoVoiceAppContext: VoiceAppContext = {
   userId: 'mobile-user-3281',
@@ -16,12 +17,18 @@ export const demoVoiceAppContext: VoiceAppContext = {
   },
 };
 
-export function initialVoiceTranscript(now: string): VoiceTranscriptTurn[] {
+export function demoVoiceActivityContext(now: string): VoiceActivityContext {
+  return buildMockActivityContext(demoVoiceAppContext, now);
+}
+
+export function initialVoiceTranscript(now: string, activityContext?: VoiceActivityContext): VoiceTranscriptTurn[] {
   return [
     {
       id: crypto.randomUUID(),
       speaker: 'system',
-      text: 'In-app voice session started with authenticated mobile context.',
+      text: activityContext
+        ? `In-app voice session started with authenticated mobile context and activity snapshot: ${activityContext.summary}`
+        : 'In-app voice session started with authenticated mobile context.',
       createdAt: now,
       isFinal: true,
     },

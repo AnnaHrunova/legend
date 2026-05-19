@@ -159,6 +159,57 @@ export interface VoiceAppContext {
   entityContext?: Record<string, string>;
 }
 
+export interface VoiceActivityAction {
+  id: string;
+  occurredAt: string;
+  source: 'mobile_app' | 'backend' | 'payments' | 'auth' | 'support';
+  label: string;
+  detail: string;
+  outcome?: string;
+  metadata?: Record<string, string>;
+}
+
+export interface VoiceActivityContext {
+  generatedAt: string;
+  lookbackMinutes: number;
+  lastSeenAt: string;
+  riskLevel: 'low' | 'medium' | 'high';
+  summary: string;
+  lastActions: VoiceActivityAction[];
+  recentBackendEvents: VoiceActivityAction[];
+  recentErrors: string[];
+  paymentContext?: {
+    provider?: string;
+    method?: string;
+    transactionReference?: string;
+    lastAttemptStatus?: string;
+    amount?: string;
+    currency?: string;
+  };
+  deviceContext?: {
+    platform?: ReviewPlatform;
+    appVersion?: string;
+    locale?: string;
+    network?: string;
+    deviceModel?: string;
+  };
+  linkedKnownIssue?: {
+    id: string;
+    title: string;
+    status: string;
+  };
+  duplicateHints: Array<{
+    ticketId: string;
+    reason: string;
+    status: TicketStatus;
+  }>;
+  backendSignals: Array<{
+    id: string;
+    label: string;
+    detail: string;
+  }>;
+}
+
 export interface VoiceTranscriptTurn {
   id: string;
   speaker: 'user' | 'ai' | 'agent' | 'system';
@@ -181,6 +232,7 @@ export interface VoiceSession {
   agentDispatchId?: string;
   mode: 'livekit' | 'mock';
   appContext: VoiceAppContext;
+  activityContext?: VoiceActivityContext;
   detectedIntent?: string;
   handoffReason?: string;
   summary?: string;

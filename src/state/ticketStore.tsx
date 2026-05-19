@@ -11,6 +11,7 @@ import { mockTickets } from '../data/mockTickets';
 import { agents } from '../data/mockUsers';
 import { customers } from '../data/mockCustomers';
 import { topics } from '../analytics/topics/domain';
+import { buildMockActivityContext } from '../data/mockActivityContext';
 import { initialVoiceTranscript } from '../data/mockVoiceSupport';
 import { getActiveAgent } from './activeAgent';
 import type {
@@ -363,6 +364,7 @@ export function TicketProvider({ children }: { children: ReactNode }) {
     const now = nowIso();
     const topic = topics.find((item) => item.id === 'payment-failed') ?? topics[0]!;
     const sessionId = `voice_${crypto.randomUUID()}`;
+    const activityContext = buildMockActivityContext(appContext, now);
     const voiceSession: VoiceSession = {
       id: sessionId,
       roomName: `legend-${sessionId}`,
@@ -371,9 +373,10 @@ export function TicketProvider({ children }: { children: ReactNode }) {
       startedAt: now,
       mode: 'mock',
       appContext,
+      activityContext,
       detectedIntent: 'payment_failed_after_3ds',
-      summary: 'Customer started an in-app voice session from checkout after a 3DS payment failure.',
-      transcript: initialVoiceTranscript(now),
+      summary: activityContext.summary,
+      transcript: initialVoiceTranscript(now, activityContext),
     };
     const newTicket: Ticket = {
       id: `TCK-${nextNumber}`,
@@ -416,6 +419,10 @@ export function TicketProvider({ children }: { children: ReactNode }) {
       ],
       activity: [
         activity('Legend Voice', 'Created voice ticket from authenticated in-app session'),
+        activity(
+          'Activity Context',
+          `Attached ${activityContext.lastActions.length} recent user actions and ${activityContext.backendSignals.length} backend signals`,
+        ),
       ],
     };
     setTickets((current) => [newTicket, ...current]);

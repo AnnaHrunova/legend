@@ -3233,6 +3233,132 @@ textarea:focus {
   line-height: 1.45;
 }
 
+.voice-activity-context {
+  display: grid;
+  gap: 12px;
+  border: 1px solid #d6e0ec;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 14px;
+}
+
+.voice-activity-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.voice-activity-header h3 {
+  margin: 2px 0 0;
+  color: #172033;
+  font-size: 16px;
+}
+
+.voice-activity-header > span {
+  align-self: start;
+  min-height: 24px;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 0 9px;
+  background: #fff3d7;
+  color: #9f4f16;
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.voice-activity-context > p {
+  margin: 0;
+  color: #46566c;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.voice-activity-facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.voice-activity-facts dl {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  border: 1px solid #e7edf4;
+  border-radius: 8px;
+  padding: 10px;
+}
+
+.voice-activity-facts dt {
+  color: #66758a;
+  font-size: 10px;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.voice-activity-facts dd {
+  margin: 2px 0 0;
+  color: #172033;
+  font-size: 12px;
+  font-weight: 850;
+  overflow-wrap: anywhere;
+}
+
+.voice-activity-columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.voice-activity-columns > div {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+}
+
+.voice-activity-columns strong {
+  color: #172033;
+  font-size: 13px;
+}
+
+.voice-activity-columns ol,
+.voice-activity-columns ul {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding-left: 18px;
+}
+
+.voice-activity-columns li span {
+  color: #172033;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.voice-activity-columns li p {
+  margin: 2px 0 0;
+  color: #66758a;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.voice-activity-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.voice-activity-links span {
+  border: 1px solid #bfefe6;
+  border-radius: 999px;
+  padding: 5px 8px;
+  background: #f0fdfa;
+  color: #0f766e;
+  font-size: 11px;
+  font-weight: 850;
+}
+
 .voice-warning-list {
   display: grid;
   gap: 6px;
@@ -3517,6 +3643,8 @@ textarea:focus {
   .topics-layout,
   .topics-dashboard-grid,
   .voice-context-grid,
+  .voice-activity-facts,
+  .voice-activity-columns,
   .topic-trend-grid {
     grid-template-columns: 1fr;
   }

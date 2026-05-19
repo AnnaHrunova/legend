@@ -143,6 +143,7 @@ function compactTicket(ticket) {
       ? {
           detectedIntent: stringOrUndefined(ticket.voiceSession.detectedIntent),
           summary: stringOrUndefined(ticket.voiceSession.summary),
+          activityContext: compactActivityContext(ticket.voiceSession.activityContext),
           appContext: ticket.voiceSession.appContext
             ? {
                 platform: stringOrUndefined(ticket.voiceSession.appContext.platform),
@@ -157,6 +158,62 @@ function compactTicket(ticket) {
         }
       : undefined,
   };
+}
+
+function compactActivityContext(activityContext) {
+  if (!activityContext || typeof activityContext !== 'object') return undefined;
+  return {
+    summary: stringOrUndefined(activityContext.summary),
+    riskLevel: stringOrUndefined(activityContext.riskLevel),
+    lastSeenAt: stringOrUndefined(activityContext.lastSeenAt),
+    recentErrors: Array.isArray(activityContext.recentErrors)
+      ? activityContext.recentErrors.map(stringOrUndefined).filter(Boolean).slice(0, 10)
+      : [],
+    lastActions: compactActivityItems(activityContext.lastActions, 6),
+    recentBackendEvents: compactActivityItems(activityContext.recentBackendEvents, 6),
+    paymentContext: activityContext.paymentContext
+      ? {
+          provider: stringOrUndefined(activityContext.paymentContext.provider),
+          method: stringOrUndefined(activityContext.paymentContext.method),
+          transactionReference: stringOrUndefined(activityContext.paymentContext.transactionReference),
+          lastAttemptStatus: stringOrUndefined(activityContext.paymentContext.lastAttemptStatus),
+          amount: stringOrUndefined(activityContext.paymentContext.amount),
+          currency: stringOrUndefined(activityContext.paymentContext.currency),
+        }
+      : undefined,
+    linkedKnownIssue: activityContext.linkedKnownIssue
+      ? {
+          id: stringOrUndefined(activityContext.linkedKnownIssue.id),
+          title: stringOrUndefined(activityContext.linkedKnownIssue.title),
+          status: stringOrUndefined(activityContext.linkedKnownIssue.status),
+        }
+      : undefined,
+    duplicateHints: Array.isArray(activityContext.duplicateHints)
+      ? activityContext.duplicateHints.slice(0, 5).map((hint) => ({
+          ticketId: stringOrUndefined(hint.ticketId),
+          reason: stringOrUndefined(hint.reason),
+          status: stringOrUndefined(hint.status),
+        }))
+      : [],
+    backendSignals: Array.isArray(activityContext.backendSignals)
+      ? activityContext.backendSignals.slice(0, 8).map((signal) => ({
+          id: stringOrUndefined(signal.id),
+          label: stringOrUndefined(signal.label),
+          detail: stringOrUndefined(signal.detail),
+        }))
+      : [],
+  };
+}
+
+function compactActivityItems(items, limit) {
+  if (!Array.isArray(items)) return [];
+  return items.slice(0, limit).map((item) => ({
+    occurredAt: stringOrUndefined(item.occurredAt),
+    source: stringOrUndefined(item.source),
+    label: stringOrUndefined(item.label),
+    detail: stringOrUndefined(item.detail),
+    outcome: stringOrUndefined(item.outcome),
+  }));
 }
 
 function compactKnownIssue(issue) {

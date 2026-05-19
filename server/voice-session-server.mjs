@@ -3,6 +3,7 @@ import dotenv from 'dotenv';
 import express from 'express';
 import { AccessToken, AgentDispatchClient, RoomServiceClient } from 'livekit-server-sdk';
 import pg from 'pg';
+import { loadMockActivityContext } from './activity-context.mjs';
 import { assistStatusChange, statusAssistHealth } from './status-change-assist-agent.mjs';
 
 dotenv.config({ path: '.env.local' });
@@ -48,11 +49,13 @@ app.post('/api/voice-sessions', async (request, response) => {
 
   const roomName = safeRoomName(requestedRoomName);
   try {
+    const activityContext = loadMockActivityContext(appContext);
     const started = await createLiveKitVoiceSession({
       ticketId,
       voiceSessionId,
       roomName,
       appContext,
+      activityContext,
     });
     response.json(started);
   } catch (error) {
@@ -76,11 +79,13 @@ app.post('/api/mobile-voice-sessions', async (request, response) => {
     const ticketId = await nextVoiceTicketId();
     const voiceSessionId = `voice_${crypto.randomUUID()}`;
     const roomName = safeRoomName(`legend-${voiceSessionId}`);
+    const activityContext = loadMockActivityContext(appContext, now);
     const started = await createLiveKitVoiceSession({
       ticketId,
       voiceSessionId,
       roomName,
       appContext,
+      activityContext,
     });
     const ticket = buildMobileVoiceTicket({
       ticketId,
@@ -98,9 +103,10 @@ app.post('/api/mobile-voice-sessions', async (request, response) => {
         agentDispatchId: started.agentDispatchId,
         mode: started.mode,
         appContext,
+        activityContext,
         detectedIntent: detectVoiceIntent(appContext),
-        summary: voiceSummary(appContext),
-        transcript: initialVoiceTranscript(now),
+        summary: activityContext.summary,
+        transcript: initialVoiceTranscript(now, activityContext),
         setupWarnings: started.setupWarnings,
       },
     });
@@ -232,7 +238,7 @@ async function listVoiceTickets() {
   return result.rows.map((row) => row.ticket);
 }
 
-async function createLiveKitVoiceSession({ ticketId, voiceSessionId, roomName, appContext }) {
+async function createLiveKitVoiceSession({ ticketId, voiceSessionId, roomName, appContext, activityContext }) {
   const setupWarnings = [];
 
   if (!hasLiveKitConfig()) {
@@ -252,14 +258,14 @@ async function createLiveKitVoiceSession({ ticketId, voiceSessionId, roomName, a
     name: roomName,
     emptyTimeout: 60,
     maxParticipants: 4,
-    metadata: JSON.stringify({ ticketId, voiceSessionId, appContext }),
+    metadata: JSON.stringify({ ticketId, voiceSessionId, appContext, activityContext }),
   });
 
   let agentDispatchId;
   try {
     const dispatchClient = new AgentDispatchClient(livekitUrl, livekitApiKey, livekitApiSecret);
     const dispatch = await dispatchClient.createDispatch(roomName, agentName, {
-      metadata: JSON.stringify({ ticketId, voiceSessionId, appContext }),
+      metadata: JSON.stringify({ ticketId, voiceSessionId, appContext, activityContext }),
     });
     agentDispatchId = dispatch.id;
   } catch (error) {
@@ -340,6 +346,14 @@ function buildMobileVoiceTicket({ ticketId, now, appContext, voiceSession }) {
         action: 'Created voice ticket from mobile voice API',
         createdAt: now,
       },
+      {
+        id: crypto.randomUUID(),
+        actorName: 'Activity Context',
+        action:
+          `Attached ${voiceSession.activityContext?.lastActions?.length ?? 0} recent user actions and ` +
+          `${voiceSession.activityContext?.backendSignals?.length ?? 0} backend signals`,
+        createdAt: now,
+      },
     ],
   };
 }
@@ -351,10 +365,6 @@ function voiceSubject(appContext) {
   return `In-app voice: ${appContext.currentScreen ?? 'mobile support'}`;
 }
 
-function voiceSummary(appContext) {
-  return `Customer started an in-app voice session from ${appContext.currentScreen ?? 'the mobile app'} after ${appContext.lastAction ?? 'an app action'}.`;
-}
-
 function detectVoiceIntent(appContext) {
   const errors = Array.isArray(appContext.recentErrors) ? appContext.recentErrors.join('_') : '';
   if (/payment|3ds|card/i.test(`${appContext.currentScreen ?? ''}_${appContext.lastAction ?? ''}_${errors}`)) {
@@ -363,12 +373,14 @@ function detectVoiceIntent(appContext) {
   return 'mobile_support_request';
 }
 
-function initialVoiceTranscript(now) {
+function initialVoiceTranscript(now, activityContext) {
   return [
     {
       id: crypto.randomUUID(),
       speaker: 'system',
-      text: 'In-app voice session started with authenticated mobile context.',
+      text: activityContext
+        ? `In-app voice session started with authenticated mobile context and activity snapshot: ${activityContext.summary}`
+        : 'In-app voice session started with authenticated mobile context.',
       createdAt: now,
       isFinal: true,
     },

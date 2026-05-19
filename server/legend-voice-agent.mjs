@@ -96,9 +96,20 @@ function parseMetadata(value) {
 
 function buildInstructions(sessionContext) {
   const appContext = sessionContext.appContext ?? {};
+  const activityContext = sessionContext.activityContext ?? {};
   const recentErrors = Array.isArray(appContext.recentErrors)
     ? appContext.recentErrors.join(', ')
     : 'none';
+  const activityActions = Array.isArray(activityContext.lastActions)
+    ? activityContext.lastActions.slice(0, 5).map((action) => `  - ${action.label}: ${action.detail}`).join('\n')
+    : '  - none';
+  const backendEvents = Array.isArray(activityContext.recentBackendEvents)
+    ? activityContext.recentBackendEvents.slice(0, 4).map((event) => `  - ${event.label}: ${event.detail}`).join('\n')
+    : '  - none';
+  const backendSignals = Array.isArray(activityContext.backendSignals)
+    ? activityContext.backendSignals.slice(0, 5).map((signal) => `  - ${signal.label}: ${signal.detail}`).join('\n')
+    : '  - none';
+  const paymentContext = activityContext.paymentContext ?? {};
 
   return `You are LegendDesk's in-app support voice agent.
 
@@ -112,6 +123,20 @@ Use the mobile app context before asking broad discovery questions:
 - Current screen: ${appContext.currentScreen ?? 'unknown'}
 - Last action: ${appContext.lastAction ?? 'unknown'}
 - Recent errors: ${recentErrors}
+
+Use the prepared activity context before asking what happened:
+- Activity summary: ${activityContext.summary ?? 'none'}
+- Risk level: ${activityContext.riskLevel ?? 'unknown'}
+- Payment provider: ${paymentContext.provider ?? 'unknown'}
+- Transaction reference: ${paymentContext.transactionReference ?? 'unknown'}
+- Last payment status: ${paymentContext.lastAttemptStatus ?? 'unknown'}
+- Known issue: ${activityContext.linkedKnownIssue?.title ?? 'none'}
+- Recent user actions:
+${activityActions}
+- Backend events:
+${backendEvents}
+- Backend signals:
+${backendSignals}
 
 Your job:
 1. Confirm the likely issue from context.

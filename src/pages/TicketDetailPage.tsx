@@ -1301,6 +1301,10 @@ function VoiceSessionPanel({
         </div>
       </div>
 
+      {voiceSession.activityContext && (
+        <VoiceActivityContextPanel activityContext={voiceSession.activityContext} />
+      )}
+
       {voiceSession.setupWarnings?.length ? (
         <div className="voice-warning-list">
           {voiceSession.setupWarnings.map((warning) => (
@@ -1348,6 +1352,84 @@ function VoiceSessionPanel({
           </article>
         ))}
       </div>
+    </section>
+  );
+}
+
+function VoiceActivityContextPanel({
+  activityContext,
+}: {
+  activityContext: NonNullable<NonNullable<Ticket['voiceSession']>['activityContext']>;
+}) {
+  const payment = activityContext.paymentContext;
+  const device = activityContext.deviceContext;
+  return (
+    <section className="voice-activity-context">
+      <div className="voice-activity-header">
+        <div>
+          <p className="eyebrow">Activity context</p>
+          <h3>What happened before the call</h3>
+        </div>
+        <span>{activityContext.riskLevel} risk</span>
+      </div>
+      <p>{activityContext.summary}</p>
+
+      <div className="voice-activity-facts">
+        {payment && (
+          <dl>
+            <div><dt>Provider</dt><dd>{payment.provider ?? 'Unknown'}</dd></div>
+            <div><dt>Transaction</dt><dd>{payment.transactionReference ?? 'Missing'}</dd></div>
+            <div><dt>Status</dt><dd>{payment.lastAttemptStatus ?? 'Unknown'}</dd></div>
+          </dl>
+        )}
+        {device && (
+          <dl>
+            <div><dt>Device</dt><dd>{device.deviceModel ?? 'Unknown'}</dd></div>
+            <div><dt>Network</dt><dd>{device.network ?? 'Unknown'}</dd></div>
+            <div><dt>Locale</dt><dd>{device.locale ?? 'Unknown'}</dd></div>
+          </dl>
+        )}
+      </div>
+
+      <div className="voice-activity-columns">
+        <div>
+          <strong>Recent user actions</strong>
+          <ol>
+            {activityContext.lastActions.slice(0, 5).map((action) => (
+              <li key={action.id}>
+                <span>{action.label}</span>
+                <p>{action.detail}</p>
+              </li>
+            ))}
+          </ol>
+        </div>
+        <div>
+          <strong>Backend signals</strong>
+          <ul>
+            {activityContext.backendSignals.slice(0, 5).map((signal) => (
+              <li key={signal.id}>
+                <span>{signal.label}</span>
+                <p>{signal.detail}</p>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+
+      {(activityContext.linkedKnownIssue || activityContext.duplicateHints.length > 0) && (
+        <div className="voice-activity-links">
+          {activityContext.linkedKnownIssue && (
+            <span>
+              Known issue: {activityContext.linkedKnownIssue.title}
+            </span>
+          )}
+          {activityContext.duplicateHints.slice(0, 2).map((hint) => (
+            <span key={hint.ticketId}>
+              Duplicate hint: {hint.ticketId} · {hint.reason}
+            </span>
+          ))}
+        </div>
+      )}
     </section>
   );
 }
