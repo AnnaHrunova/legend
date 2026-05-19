@@ -71,6 +71,7 @@ function normalizeTickets(tickets: Ticket[]): Ticket[] {
       relatedTicketIds: ticket.relatedTicketIds ?? [],
       mergedTicketIds: ticket.mergedTicketIds ?? [],
       knownIssueIds: ticket.knownIssueIds ?? [],
+      statusDetails: ticket.statusDetails ?? [],
       ...(ticket.voiceSession
         ? {
             voiceSession: {

@@ -110,6 +110,26 @@ export interface TicketActivity {
   createdAt: string;
 }
 
+export interface TicketStatusFieldSnapshot {
+  fieldId: string;
+  label: string;
+  value: string;
+}
+
+export interface TicketStatusBackendSignalSnapshot {
+  id: string;
+  label: string;
+  detail: string;
+}
+
+export interface TicketStatusDetail {
+  status: TicketStatus;
+  completedAt: string;
+  fields: TicketStatusFieldSnapshot[];
+  aiPrefilledFieldIds: string[];
+  backendSignals: TicketStatusBackendSignalSnapshot[];
+}
+
 export type VoiceSessionStatus =
   | 'connecting'
   | 'ai_active'
@@ -198,6 +218,7 @@ export interface Ticket {
   relatedTicketIds?: string[];
   mergedTicketIds?: string[];
   knownIssueIds?: string[];
+  statusDetails?: TicketStatusDetail[];
   voiceSession?: VoiceSession;
   sla: {
     state: SlaState;

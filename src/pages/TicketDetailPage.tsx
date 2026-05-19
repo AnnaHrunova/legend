@@ -9,7 +9,7 @@ import {
 } from '@livekit/components-react';
 import '@livekit/components-styles';
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
-import { PhoneCall, PhoneOff, UserPlus } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, PhoneCall, PhoneOff, Sparkles, UserPlus, X } from 'lucide-react';
 import { track } from '../analytics/analytics';
 import { getProject, getTopic } from '../analytics/topics/domain';
 import { PriorityBadge, SlaBadge, StatusBadge } from '../components/Badges';
@@ -32,6 +32,13 @@ import {
   type VoiceCallStatus,
   type VoiceTranscriptTurn,
 } from '../domain/types';
+import {
+  buildStatusAutofill,
+  getStatusRequirement,
+  missingRequiredFields,
+  type StatusBackendSignal,
+  type StatusRequirementDefinition,
+} from '../domain/statusRequirements';
 import { useActiveAgent, useAssignableAgents } from '../state/activeAgent';
 import { useTickets } from '../state/ticketStore';
 import { endVoiceRoom } from '../voice/voiceSessionApi';
@@ -62,6 +69,9 @@ export function TicketDetailPage() {
   const [note, setNote] = useState('');
   const [newTag, setNewTag] = useState('');
   const [voiceRoomOpen, setVoiceRoomOpen] = useState(false);
+  const [statusDraft, setStatusDraft] = useState<StatusChangeDraft | undefined>();
+  const [statusFieldValues, setStatusFieldValues] = useState<Record<string, string>>({});
+  const [statusSubmitAttempted, setStatusSubmitAttempted] = useState(false);
   const activeTicketId = ticket?.id;
 
   const possibleDuplicates = useMemo(
@@ -115,6 +125,12 @@ export function TicketDetailPage() {
     });
   }, [activeTicketId, primaryKnownIssue]);
 
+  useEffect(() => {
+    setStatusDraft(undefined);
+    setStatusFieldValues({});
+    setStatusSubmitAttempted(false);
+  }, [activeTicketId]);
+
   if (!ticket) {
     return <Navigate to="/inbox" replace />;
   }
@@ -123,12 +139,82 @@ export function TicketDetailPage() {
 
   function changeStatus(status: TicketStatus) {
     if (status === activeTicket.status) return;
-    updateTicket(activeTicket.id, { status }, `Changed status to ${status}`);
+    const requirement = getStatusRequirement(status);
+    if (requirement) {
+      const autofill = buildStatusAutofill(status, activeTicket, {
+        knownIssue: primaryKnownIssue,
+        duplicateCount: possibleDuplicates.length,
+      });
+      setStatusDraft({
+        status,
+        requirement,
+        initialValues: autofill.values,
+        aiPrefilledFieldIds: autofill.aiPrefilledFieldIds,
+        backendSignals: autofill.backendSignals,
+      });
+      setStatusFieldValues(autofill.values);
+      setStatusSubmitAttempted(false);
+      return;
+    }
+    commitStatusChange(status);
+  }
+
+  function commitStatusChange(status: TicketStatus) {
+    const draft = statusDraft?.status === status ? statusDraft : undefined;
+    const requirement = draft?.requirement;
+    const missingFields = requirement ? missingRequiredFields(requirement, statusFieldValues) : [];
+    if (missingFields.length) {
+      setStatusSubmitAttempted(true);
+      return;
+    }
+
+    const statusDetail = requirement
+      ? {
+          status,
+          completedAt: new Date().toISOString(),
+          fields: requirement.fields.map((field) => ({
+            fieldId: field.id,
+            label: field.label,
+            value: statusFieldValues[field.id] ?? '',
+          })),
+          aiPrefilledFieldIds: draft.aiPrefilledFieldIds,
+          backendSignals: draft.backendSignals.map((signal) => ({
+            id: signal.id,
+            label: signal.label,
+            detail: signal.detail,
+          })),
+        }
+      : undefined;
+    const acceptedAiFieldIds =
+      draft?.aiPrefilledFieldIds.filter(
+        (fieldId) => draft.initialValues[fieldId] && statusFieldValues[fieldId] === draft.initialValues[fieldId],
+      ) ?? [];
+
+    updateTicket(
+      activeTicket.id,
+      {
+        status,
+        ...(statusDetail
+          ? { statusDetails: [statusDetail, ...(activeTicket.statusDetails ?? [])].slice(0, 8) }
+          : {}),
+      },
+      `Changed status to ${status}`,
+    );
     track('ticket_status_changed', {
       ticketId: activeTicket.id,
       fromStatus: activeTicket.status,
       toStatus: status,
+      requiredFieldsShown: Boolean(requirement),
+      requiredFieldsCompleted: requirement?.fields.map((field) => field.id) ?? [],
+      missingFields,
+      aiPrefilledFieldIds: draft?.aiPrefilledFieldIds ?? [],
+      aiAcceptedFieldIds: acceptedAiFieldIds,
+      agentAcceptedAiSuggestion: acceptedAiFieldIds.length > 0,
+      backendSignalsShown: draft?.backendSignals.map((signal) => signal.id) ?? [],
     });
+    setStatusDraft(undefined);
+    setStatusFieldValues({});
+    setStatusSubmitAttempted(false);
   }
 
   function changePriority(priority: Priority) {
@@ -763,6 +849,7 @@ export function TicketDetailPage() {
               ))}
             </select>
           </div>
+          {ticket.statusDetails?.[0] && <StatusDetailSummary detail={ticket.statusDetails[0]} />}
           <div className="field-block">
             <div className="field-label-row">
               <span>Priority</span>
@@ -911,6 +998,25 @@ export function TicketDetailPage() {
           onClose={() => setKnownIssueDetails(undefined)}
         />
       )}
+      {statusDraft && (
+        <StatusChangeDrawer
+          draft={statusDraft}
+          values={statusFieldValues}
+          submitAttempted={statusSubmitAttempted}
+          onChange={(fieldId, value) =>
+            setStatusFieldValues((current) => ({
+              ...current,
+              [fieldId]: value,
+            }))
+          }
+          onCancel={() => {
+            setStatusDraft(undefined);
+            setStatusFieldValues({});
+            setStatusSubmitAttempted(false);
+          }}
+          onSubmit={() => commitStatusChange(statusDraft.status)}
+        />
+      )}
     </section>
   );
 }
@@ -922,12 +1028,146 @@ type AppliedMacroState = {
   body: string;
 };
 
+type StatusChangeDraft = {
+  status: TicketStatus;
+  requirement: StatusRequirementDefinition;
+  initialValues: Record<string, string>;
+  aiPrefilledFieldIds: string[];
+  backendSignals: StatusBackendSignal[];
+};
+
 type DuplicateReason = 'Same topic' | 'Same project' | 'Same release window' | 'Same review source';
 
 type DuplicateSuggestion = {
   ticket: Ticket;
   reasons: DuplicateReason[];
 };
+
+function StatusDetailSummary({ detail }: { detail: NonNullable<Ticket['statusDetails']>[number] }) {
+  return (
+    <div className="status-detail-summary">
+      <div>
+        <strong>{detail.status} fields</strong>
+        <span>{formatDate(detail.completedAt)}</span>
+      </div>
+      <dl>
+        {detail.fields.slice(0, 3).map((field) => (
+          <div key={field.fieldId}>
+            <dt>{field.label}</dt>
+            <dd>{field.value}</dd>
+          </div>
+        ))}
+      </dl>
+      {detail.backendSignals.length > 0 && (
+        <span className="status-signal-count">{detail.backendSignals.length} backend signal{detail.backendSignals.length === 1 ? '' : 's'}</span>
+      )}
+    </div>
+  );
+}
+
+function StatusChangeDrawer({
+  draft,
+  values,
+  submitAttempted,
+  onChange,
+  onCancel,
+  onSubmit,
+}: {
+  draft: StatusChangeDraft;
+  values: Record<string, string>;
+  submitAttempted: boolean;
+  onChange: (fieldId: string, value: string) => void;
+  onCancel: () => void;
+  onSubmit: () => void;
+}) {
+  const missingFields = missingRequiredFields(draft.requirement, values);
+  return (
+    <div className="modal-backdrop status-drawer-backdrop" role="dialog" aria-modal="true">
+      <section className="status-change-drawer">
+        <header className="status-drawer-header">
+          <div>
+            <p className="eyebrow">Status change</p>
+            <h2>{draft.requirement.title}</h2>
+          </div>
+          <button type="button" onClick={onCancel} aria-label="Close status requirements">
+            <X size={16} />
+          </button>
+        </header>
+
+        <div className="status-drawer-target">
+          <span>Move to</span>
+          <strong>{draft.status}</strong>
+        </div>
+
+        <div className="status-required-fields">
+          {draft.requirement.fields.map((field) => {
+            const missing = submitAttempted && missingFields.includes(field.id);
+            const aiPrefilled = draft.aiPrefilledFieldIds.includes(field.id);
+            return (
+              <label key={field.id} className={missing ? 'field-block field-error' : 'field-block'}>
+                <span>
+                  {field.label}
+                  {aiPrefilled && (
+                    <em>
+                      <Sparkles size={13} />
+                      AI filled
+                    </em>
+                  )}
+                </span>
+                {field.kind === 'select' ? (
+                  <select value={values[field.id] ?? ''} onChange={(event) => onChange(field.id, event.target.value)}>
+                    <option value="">Select...</option>
+                    {field.options?.map((option) => (
+                      <option key={option} value={option}>{option}</option>
+                    ))}
+                  </select>
+                ) : field.kind === 'date' ? (
+                  <input
+                    type="date"
+                    value={values[field.id] ?? ''}
+                    onChange={(event) => onChange(field.id, event.target.value)}
+                  />
+                ) : (
+                  <textarea
+                    value={values[field.id] ?? ''}
+                    onChange={(event) => onChange(field.id, event.target.value)}
+                    placeholder={field.placeholder}
+                  />
+                )}
+                {missing && <small>Required before status change</small>}
+              </label>
+            );
+          })}
+        </div>
+
+        {draft.backendSignals.length > 0 && (
+          <section className="status-backend-signals">
+            <div>
+              <AlertTriangle size={16} />
+              <strong>Backend signals</strong>
+            </div>
+            <ul>
+              {draft.backendSignals.map((signal) => (
+                <li key={signal.id}>
+                  <span>{signal.label}</span>
+                  <p>{signal.detail}</p>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+
+        <footer className="feedback-actions">
+          <button type="button" onClick={onCancel}>Cancel</button>
+          <button type="button" className="primary-button" onClick={onSubmit}>
+            <CheckCircle2 size={16} />
+            Save status
+          </button>
+        </footer>
+      </section>
+    </div>
+  );
+}
 
 function VoiceSessionPanel({
   ticket,
