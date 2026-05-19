@@ -580,10 +580,15 @@ jobs:
           if install -m 600 "$REMOTE_CODEX_AUTH_TMP" "$codex_auth_json_host" 2>/dev/null; then
             :
           elif command -v sudo >/dev/null 2>&1; then
-            sudo -n install -m 600 "$REMOTE_CODEX_AUTH_TMP" "$codex_auth_json_host"
+            if sudo -n install -m 600 "$REMOTE_CODEX_AUTH_TMP" "$codex_auth_json_host" 2>/dev/null; then
+              :
+            else
+              docker cp "$REMOTE_CODEX_AUTH_TMP" legend-voice-api:/tmp/codex-auth.json
+              docker exec legend-voice-api sh -lc 'install -m 600 /tmp/codex-auth.json /run/codex/auth.json && rm -f /tmp/codex-auth.json'
+            fi
           else
-            echo "Could not install Codex auth file at ${codex_auth_json_host}"
-            exit 1
+            docker cp "$REMOTE_CODEX_AUTH_TMP" legend-voice-api:/tmp/codex-auth.json
+            docker exec legend-voice-api sh -lc 'install -m 600 /tmp/codex-auth.json /run/codex/auth.json && rm -f /tmp/codex-auth.json'
           fi
           rm -f "$REMOTE_CODEX_AUTH_TMP"
 
