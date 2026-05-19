@@ -1655,6 +1655,25 @@ textarea:focus {
   font-size: 14px;
 }
 
+.status-assist-state {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 10px;
+  border: 1px solid #bfefe6;
+  border-radius: 8px;
+  background: #f0fdfa;
+  color: #0f766e;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.status-assist-error {
+  border-color: #f2d6a2;
+  background: #fffbeb;
+  color: #92400e;
+}
+
 .status-required-fields {
   display: grid;
   gap: 12px;

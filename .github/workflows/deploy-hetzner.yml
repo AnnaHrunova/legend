@@ -215,6 +215,12 @@ jobs:
           require_env_name OPENAI_API_KEY
           require_env_name OPENAI_REALTIME_MODEL
           require_env_name OPENAI_REALTIME_VOICE
+          codex_auth_json_host="$(grep '^CODEX_AUTH_JSON_HOST=' .env | tail -1 | cut -d= -f2- || true)"
+          codex_auth_json_host="${codex_auth_json_host:-/var/lib/codex-nexus/auth.json}"
+          if [ ! -f "$codex_auth_json_host" ]; then
+            echo "Missing Codex auth file for status-change assist: ${codex_auth_json_host}"
+            exit 1
+          fi
 
           echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
           docker compose -f docker-compose.hetzner.yml config >/dev/null

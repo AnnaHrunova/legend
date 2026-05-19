@@ -313,6 +313,10 @@ Expected healthy response includes:
   "livekitConfigured": true,
   "databaseConfigured": true,
   "databaseReady": true,
+  "statusAssist": {
+    "configured": true,
+    "agentName": "legend-status-change-assist-agent"
+  },
   "agentName": "legend-voice-agent"
 }
 ```
@@ -683,6 +687,14 @@ The Reports `Solved this week` KPI uses the same filter as the `Solved this week
 ## Support Workflow Features
 
 The prototype includes support-focused workflow tools. These are intentionally not dashboards or backend systems; they exist to validate how agents handle real tickets day to day.
+
+Status changes can require fixed fields for operational quality. When a required status is selected, the ticket detail opens a status drawer. The frontend sends the current ticket and the fixed field contract to:
+
+```text
+POST /api/status-change-assist
+```
+
+`legend-status-change-assist-agent` runs in `legend-voice-api` and uses Codex/ChatGPT authorization from `CODEX_AUTH_JSON`; it does not use `OPENAI_API_KEY`. The agent may only return values from the provided field options and known backend signal IDs. If Codex auth is unavailable, the drawer remains manual.
 
 ## AI Zendesk Agent
 

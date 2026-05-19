@@ -40,6 +40,11 @@ services:
       LIVEKIT_API_KEY: ${LIVEKIT_API_KEY}
       LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET}
       LIVEKIT_AGENT_NAME: ${LIVEKIT_AGENT_NAME:-legend-voice-agent}
+      CODEX_AUTH_JSON: /run/codex/auth.json
+      CODEX_BACKEND_BASE_URL: ${CODEX_BACKEND_BASE_URL:-https://chatgpt.com/backend-api/codex}
+      STATUS_ASSIST_MODEL: ${STATUS_ASSIST_MODEL:-gpt-5.5}
+    volumes:
+      - ${CODEX_AUTH_JSON_HOST:-/var/lib/codex-nexus/auth.json}:/run/codex/auth.json:ro
     depends_on:
       - legend-postgres
 

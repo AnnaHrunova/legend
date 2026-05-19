@@ -33,13 +33,13 @@ import {
   type VoiceTranscriptTurn,
 } from '../domain/types';
 import {
-  buildStatusAutofill,
   getStatusRequirement,
   missingRequiredFields,
   type StatusBackendSignal,
   type StatusRequirementDefinition,
 } from '../domain/statusRequirements';
 import { useActiveAgent, useAssignableAgents } from '../state/activeAgent';
+import { requestStatusChangeAssist } from '../status/statusChangeAssistApi';
 import { useTickets } from '../state/ticketStore';
 import { endVoiceRoom } from '../voice/voiceSessionApi';
 
@@ -72,6 +72,8 @@ export function TicketDetailPage() {
   const [statusDraft, setStatusDraft] = useState<StatusChangeDraft | undefined>();
   const [statusFieldValues, setStatusFieldValues] = useState<Record<string, string>>({});
   const [statusSubmitAttempted, setStatusSubmitAttempted] = useState(false);
+  const [statusAssistLoading, setStatusAssistLoading] = useState(false);
+  const [statusAssistError, setStatusAssistError] = useState('');
   const activeTicketId = ticket?.id;
 
   const possibleDuplicates = useMemo(
@@ -129,6 +131,8 @@ export function TicketDetailPage() {
     setStatusDraft(undefined);
     setStatusFieldValues({});
     setStatusSubmitAttempted(false);
+    setStatusAssistLoading(false);
+    setStatusAssistError('');
   }, [activeTicketId]);
 
   if (!ticket) {
@@ -141,19 +145,46 @@ export function TicketDetailPage() {
     if (status === activeTicket.status) return;
     const requirement = getStatusRequirement(status);
     if (requirement) {
-      const autofill = buildStatusAutofill(status, activeTicket, {
-        knownIssue: primaryKnownIssue,
-        duplicateCount: possibleDuplicates.length,
-      });
       setStatusDraft({
         status,
         requirement,
-        initialValues: autofill.values,
-        aiPrefilledFieldIds: autofill.aiPrefilledFieldIds,
-        backendSignals: autofill.backendSignals,
+        initialValues: {},
+        aiPrefilledFieldIds: [],
+        backendSignals: [],
       });
-      setStatusFieldValues(autofill.values);
+      setStatusFieldValues({});
       setStatusSubmitAttempted(false);
+      setStatusAssistError('');
+      setStatusAssistLoading(true);
+      void requestStatusChangeAssist({
+        status,
+        ticket: activeTicket,
+        requirement,
+        knownIssue: primaryKnownIssue,
+        duplicateCount: possibleDuplicates.length,
+      })
+        .then((assist) => {
+          setStatusDraft((current) =>
+            current?.status === status
+              ? {
+                  ...current,
+                  initialValues: assist.values,
+                  aiPrefilledFieldIds: assist.aiPrefilledFieldIds,
+                  backendSignals: assist.backendSignals,
+                }
+              : current,
+          );
+          setStatusFieldValues((current) => ({
+            ...assist.values,
+            ...current,
+          }));
+        })
+        .catch((error) => {
+          setStatusAssistError(error instanceof Error ? error.message : String(error));
+        })
+        .finally(() => {
+          setStatusAssistLoading(false);
+        });
       return;
     }
     commitStatusChange(status);
@@ -1003,6 +1034,8 @@ export function TicketDetailPage() {
           draft={statusDraft}
           values={statusFieldValues}
           submitAttempted={statusSubmitAttempted}
+          assistLoading={statusAssistLoading}
+          assistError={statusAssistError}
           onChange={(fieldId, value) =>
             setStatusFieldValues((current) => ({
               ...current,
@@ -1013,6 +1046,8 @@ export function TicketDetailPage() {
             setStatusDraft(undefined);
             setStatusFieldValues({});
             setStatusSubmitAttempted(false);
+            setStatusAssistLoading(false);
+            setStatusAssistError('');
           }}
           onSubmit={() => commitStatusChange(statusDraft.status)}
         />
@@ -1069,6 +1104,8 @@ function StatusChangeDrawer({
   draft,
   values,
   submitAttempted,
+  assistLoading,
+  assistError,
   onChange,
   onCancel,
   onSubmit,
@@ -1076,6 +1113,8 @@ function StatusChangeDrawer({
   draft: StatusChangeDraft;
   values: Record<string, string>;
   submitAttempted: boolean;
+  assistLoading: boolean;
+  assistError: string;
   onChange: (fieldId: string, value: string) => void;
   onCancel: () => void;
   onSubmit: () => void;
@@ -1098,6 +1137,22 @@ function StatusChangeDrawer({
           <span>Move to</span>
           <strong>{draft.status}</strong>
         </div>
+
+        {(assistLoading || assistError) && (
+          <div className={assistError ? 'status-assist-state status-assist-error' : 'status-assist-state'}>
+            {assistError ? (
+              <>
+                <AlertTriangle size={15} />
+                <span>AI assist unavailable. Fill the required fields manually.</span>
+              </>
+            ) : (
+              <>
+                <Sparkles size={15} />
+                <span>AI assist is checking this ticket...</span>
+              </>
+            )}
+          </div>
+        )}
 
         <div className="status-required-fields">
           {draft.requirement.fields.map((field) => {

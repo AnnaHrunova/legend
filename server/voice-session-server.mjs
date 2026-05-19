@@ -3,6 +3,7 @@ import dotenv from 'dotenv';
 import express from 'express';
 import { AccessToken, AgentDispatchClient, RoomServiceClient } from 'livekit-server-sdk';
 import pg from 'pg';
+import { assistStatusChange, statusAssistHealth } from './status-change-assist-agent.mjs';
 
 dotenv.config({ path: '.env.local' });
 dotenv.config();
@@ -26,6 +27,7 @@ app.get('/healthz', (_request, response) => {
     livekitConfigured: hasLiveKitConfig(),
     databaseConfigured: Boolean(pool),
     databaseReady,
+    statusAssist: statusAssistHealth(),
     agentName,
   });
 });
@@ -149,6 +151,15 @@ app.post('/api/voice-sessions/end', async (request, response) => {
     }
 
     response.status(502).send(`Unable to end LiveKit voice session: ${message}`);
+  }
+});
+
+app.post('/api/status-change-assist', async (request, response) => {
+  try {
+    const assisted = await assistStatusChange(request.body ?? {});
+    response.json(assisted);
+  } catch (error) {
+    response.status(502).send(`Unable to run status change assist: ${errorMessage(error)}`);
   }
 });
 
